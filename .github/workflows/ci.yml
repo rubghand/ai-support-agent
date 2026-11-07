@@ -20,3 +20,33 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run kb:lint
+
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: agent
+          POSTGRES_PASSWORD: agent
+          POSTGRES_DB: agent_test
+        ports:
+          - 5455:5432
+        options: >-
+          --health-cmd "pg_isready -U agent -d agent_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://agent:agent@localhost:5455/agent_test
+      TEST_DATABASE_URL: postgres://agent:agent@localhost:5455/agent_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run db:migrate
+      - run: npm run db:seed
+      - run: npm run test:integration

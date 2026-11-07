@@ -15,7 +15,7 @@ brew install ollama && brew services start ollama
 ollama pull qwen3:4b && ollama pull qwen3:14b
 cp .env.example .env
 npm install
-npm run db:up
+npm run setup   # start Postgres, migrate, seed, ingest the knowledge base
 npm run dev
 ```
 
@@ -23,4 +23,5 @@ npm run dev
 
 ```bash
 npm run lint && npm run typecheck && npm test
+npm run test:integration   # needs the database from `npm run db:up`
 ```

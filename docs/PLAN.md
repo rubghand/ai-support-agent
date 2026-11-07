@@ -17,20 +17,21 @@ Hardware: Apple M4 Max, 48 GB RAM — enough for a 14B local model plus Docker s
 
 ## Progress (update after every phase)
 
-**Next up:** Phase 3 — DB schema, seed data, ingestion pipeline.
+**Next up:** Phase 4 — hybrid retrieval (vector + full-text, RRF fusion) and `npm run search`.
 
-| Phase | Status      | Notes                                                                                                                                                                                                                                                                                                                                               |
-| ----- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0     | Done        | Ollama 0.40 via `brew services`; `qwen3:4b` (small) tool call verified (~5.6s, pass `think:false`). `qwen3:14b` (large, 9.3 GB) tool call verified (~3.3s warm). Gemini key not yet created (optional).                                                                                                                                             |
-| 1     | Done        | npm workspaces (`@app/web`, `@app/core`), Next.js 16.4 + Tailwind 4, ESLint 9, Prettier, Vitest, CI workflow. Postgres+pgvector 0.8.7 on **host port 5455** (5432/5433/5442/5443 are used by work repos).                                                                                                                                           |
-| 2     | Done        | 32 docs in `knowledge-base/` (9 categories). Traps: `refund-policy-2024` (outdated, conflicts with `refund-policy`), credit notes vs subscription refunds (near-duplicates), hidden injection comment in `troubleshooting/sync-errors.md`. Loader/validator in `packages/core/src/kb/load.ts`; `npm run kb:lint` in CI. Seed data moved to Phase 3. |
-| 3–18  | Not started |                                                                                                                                                                                                                                                                                                                                                     |
+| Phase | Status      | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ----- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0     | Done        | Ollama 0.40 via `brew services`; `qwen3:4b` (small) tool call verified (~5.6s, pass `think:false`). `qwen3:14b` (large, 9.3 GB) tool call verified (~3.3s warm). Gemini key not yet created (optional).                                                                                                                                                                                                                                                                                                                          |
+| 1     | Done        | npm workspaces (`@app/web`, `@app/core`), Next.js 16.4 + Tailwind 4, ESLint 9, Prettier, Vitest, CI workflow. Postgres+pgvector 0.8.7 on **host port 5455** (5432/5433/5442/5443 are used by work repos).                                                                                                                                                                                                                                                                                                                        |
+| 2     | Done        | 32 docs in `knowledge-base/` (9 categories). Traps: `refund-policy-2024` (outdated, conflicts with `refund-policy`), credit notes vs subscription refunds (near-duplicates), hidden injection comment in `troubleshooting/sync-errors.md`. Loader/validator in `packages/core/src/kb/load.ts`; `npm run kb:lint` in CI. Seed data moved to Phase 3.                                                                                                                                                                              |
+| 3     | Done        | `@app/db` package (Drizzle 0.45 + `pg`): 5 tables, migrations `0000_enable_pgvector` (custom) + `0001_init_schema`. Seed fixtures used by evals: `ORD-1042` (CUS-001, Priority support, paid), `ORD-1043` (CUS-002, Growth annual), `ORD-1044` (CUS-003, failed), `ORD-1045` (CUS-001, refunded). Ingest: 32 docs → 56 chunks (60–296 tokens, avg 140), first run 38.8s incl. model download, re-run embeds 0. Smoke test: correct doc ranked #1 for 3 sample questions. CI has a new `integration` job with a pgvector service. |
+| 4–18  | Not started |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 
 ### Resume checklist
 
 1. `brew services start ollama` (if not running) and start Docker Desktop.
-2. `npm install && npm run db:up`.
-3. `npm run lint && npm run typecheck && npm test` should be green before starting the next phase.
+2. `npm install && npm run setup` (starts DB, migrates, seeds, ingests).
+3. `npm run lint && npm run typecheck && npm test && npm run test:integration` should be green before starting the next phase.
 4. Git: commits use the repo-local identity `rubghand@gmail.com`; push to the personal GitHub remote
    (not the work `gh` account).
 
@@ -41,6 +42,13 @@ Hardware: Apple M4 Max, 48 GB RAM — enough for a 14B local model plus Docker s
 - `npm run typecheck` runs `next typegen` first for the web app (route types like `LayoutProps`).
 - Root scripts (`scripts/*.ts`) run with `tsx` and are typechecked by the root `tsconfig.json`.
 - New dependency added beyond the approved list: `tsx` (dev) to run TypeScript scripts.
+- Integration tests (`*.integration.test.ts`) use database `agent_test` (created by `docker/initdb` on a fresh volume;
+  on an existing volume run `CREATE DATABASE agent_test` once). They are excluded from `npm test`.
+- Schema changes: edit `packages/db/src/schema.ts`, then `npm run db:generate` and `npm run db:migrate`.
+- `@app/core`'s index exports server-only code (DB, embeddings). When the web app needs core code in client
+  components (Phase 6), add subpath exports (e.g. `@app/core/client`) instead of importing the root.
+- The hidden injection comment in `sync-errors.md` is intentionally kept in chunk content (not stripped) so
+  guardrails can be tested against it.
 
 ## Target architecture
 
@@ -122,18 +130,17 @@ ai-project/
 
 ### Phase 3: DB schema + seed data + ingestion pipeline
 
-**File(s):** `packages/db/schema.ts`, `packages/db/migrations/*`, `packages/db/seed/*.ts`, `packages/core/rag/chunk.ts`, `packages/core/rag/embed.ts`, `packages/core/rag/ingest.ts`, tests
+**File(s):** `packages/db/src/{schema,client,seed}.ts`, `packages/db/migrations/*`, `packages/core/src/rag/{chunk,embed,ingest}.ts`, `scripts/{db-migrate,db-seed,ingest}.ts`, tests
 
 **Changes:**
 
-- Seed data (deterministic): ~20 customers, ~100 orders (plan purchases/add-ons, `ORD-xxxx` ids), a few tickets.
+- Seed data (deterministic): 20 customers, 100 orders (plan purchases/add-ons, `ORD-1001`–`ORD-1100`), 5 tickets.
+- Tables: `documents`, `chunks` (`embedding vector(384)`, generated `tsv tsvector`, `content_hash`), HNSW index on embedding, GIN on tsv.
+- Heading-aware chunker (max 300 / min 60 tokens, 45-token overlap for long sections, keeps heading path as metadata).
+- Local embeddings via transformers.js (`Xenova/bge-small-en-v1.5`, 384-dim, CLS pooling, normalized).
+- Idempotent ingest: skip unchanged docs by document hash; reuse embeddings of unchanged chunks by chunk hash.
 
-- Tables: `documents`, `chunks` (`embedding vector(384)`, `tsv tsvector`, `content_hash`), HNSW index on embedding, GIN on tsv.
-- Heading-aware chunker (~400 tokens, ~15% overlap, keeps heading path as metadata).
-- Local embeddings via transformers.js (`bge-small-en-v1.5`, 384-dim).
-- Idempotent ingest: skip unchanged chunks by `content_hash`.
-
-**Verify:** `npx vitest run packages/core/rag && npm run ingest` → prints documents/chunks counts; re-run inserts 0 new chunks.
+**Verify:** `npm test && npm run test:integration && npm run setup` → prints counts; re-running `npm run ingest` embeds 0 chunks.
 
 ---
 

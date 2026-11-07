@@ -16,9 +16,15 @@
     "typecheck": "tsc --noEmit -p . && npm run typecheck --workspaces --if-present",
     "kb:lint": "tsx scripts/kb-lint.ts",
     "test": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "db:up": "docker compose up -d db"
+    "db:up": "docker compose up -d --wait db",
+    "db:generate": "npm run generate -w @app/db",
+    "db:migrate": "tsx --env-file-if-exists=.env scripts/db-migrate.ts",
+    "db:seed": "tsx --env-file-if-exists=.env scripts/db-seed.ts",
+    "ingest": "tsx --env-file-if-exists=.env scripts/ingest.ts",
+    "setup": "npm run db:up && npm run db:migrate && npm run db:seed && npm run ingest"
   },
   "devDependencies": {
     "@eslint/js": "^9",

@@ -10,6 +10,9 @@
     "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {
+    "@app/db": "*",
+    "@huggingface/transformers": "^4.3.2",
+    "drizzle-orm": "^0.45.4",
     "gray-matter": "^4.0.3",
     "zod": "^4"
   }
