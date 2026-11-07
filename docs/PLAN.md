@@ -17,13 +17,14 @@ Hardware: Apple M4 Max, 48 GB RAM — enough for a 14B local model plus Docker s
 
 ## Progress (update after every phase)
 
-**Next up:** Phase 2 — fictional product docs + seed data.
+**Next up:** Phase 3 — DB schema, seed data, ingestion pipeline.
 
-| Phase | Status      | Notes                                                                                                                                                                                                     |
-| ----- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0     | Done        | Ollama 0.40 via `brew services`; models `qwen3:4b` (small) + `qwen3:14b` (large). `qwen3:4b` tool call verified (~5.6s, pass `think:false`). Gemini key not yet created (optional).                       |
-| 1     | Done        | npm workspaces (`@app/web`, `@app/core`), Next.js 16.4 + Tailwind 4, ESLint 9, Prettier, Vitest, CI workflow. Postgres+pgvector 0.8.7 on **host port 5455** (5432/5433/5442/5443 are used by work repos). |
-| 2–18  | Not started |                                                                                                                                                                                                           |
+| Phase | Status      | Notes                                                                                                                                                                                                                                                                                                                                               |
+| ----- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0     | Done        | Ollama 0.40 via `brew services`; `qwen3:4b` (small) tool call verified (~5.6s, pass `think:false`). `qwen3:14b` (large) download was in progress — check with `ollama list`, re-run `ollama pull qwen3:14b` if missing. Gemini key not yet created (optional).                                                                                      |
+| 1     | Done        | npm workspaces (`@app/web`, `@app/core`), Next.js 16.4 + Tailwind 4, ESLint 9, Prettier, Vitest, CI workflow. Postgres+pgvector 0.8.7 on **host port 5455** (5432/5433/5442/5443 are used by work repos).                                                                                                                                           |
+| 2     | Done        | 32 docs in `knowledge-base/` (9 categories). Traps: `refund-policy-2024` (outdated, conflicts with `refund-policy`), credit notes vs subscription refunds (near-duplicates), hidden injection comment in `troubleshooting/sync-errors.md`. Loader/validator in `packages/core/src/kb/load.ts`; `npm run kb:lint` in CI. Seed data moved to Phase 3. |
+| 3–18  | Not started |                                                                                                                                                                                                                                                                                                                                                     |
 
 ### Resume checklist
 
@@ -38,6 +39,8 @@ Hardware: Apple M4 Max, 48 GB RAM — enough for a 14B local model plus Docker s
 - Next.js 16 ships `apps/web/AGENTS.md`: read `node_modules/next/dist/docs/` before writing Next code (APIs differ from older versions).
 - Workspace packages export TypeScript source directly; `apps/web/next.config.ts` lists them in `transpilePackages`.
 - `npm run typecheck` runs `next typegen` first for the web app (route types like `LayoutProps`).
+- Root scripts (`scripts/*.ts`) run with `tsx` and are typechecked by the root `tsconfig.json`.
+- New dependency added beyond the approved list: `tsx` (dev) to run TypeScript scripts.
 
 ## Target architecture
 
@@ -102,27 +105,28 @@ ai-project/
 
 ---
 
-### Phase 2: Fictional product + knowledge base + seed data
+### Phase 2: Fictional product + knowledge base
 
-**File(s):** `knowledge-base/**/*.md`, `packages/db/seed/*.ts`
+**File(s):** `knowledge-base/**/*.md`, `packages/core/src/kb/load.ts`, `scripts/kb-lint.ts`
 
 **Changes:**
 
-- Write ~25 Ledgerly doc pages with frontmatter (`id`, `title`, `url`, `category`): getting started,
+- Write ~25 Ledgerly doc pages with frontmatter (`id`, `title`, `url`, `category`, `updated`): getting started,
   invoices, payments, plans & billing, refunds policy, integrations, API, security, troubleshooting, FAQ.
 - Deliberately include: conflicting/outdated page (tests recency handling), one page with an embedded
   prompt-injection string (tests indirect injection), near-duplicate topics (tests reranking).
-- Seed data: ~20 customers, ~100 orders (plan purchases/add-ons), a few existing tickets.
 
-**Verify:** `npm run kb:lint` (frontmatter schema check with Zod) passes; `npm run db:seed` prints row counts.
+**Verify:** `npm run kb:lint` (frontmatter schema, unique ids, no broken internal links) passes.
 
 ---
 
-### Phase 3: DB schema + ingestion pipeline
+### Phase 3: DB schema + seed data + ingestion pipeline
 
-**File(s):** `packages/db/schema.ts`, `packages/db/migrations/*`, `packages/core/rag/chunk.ts`, `packages/core/rag/embed.ts`, `packages/core/rag/ingest.ts`, tests
+**File(s):** `packages/db/schema.ts`, `packages/db/migrations/*`, `packages/db/seed/*.ts`, `packages/core/rag/chunk.ts`, `packages/core/rag/embed.ts`, `packages/core/rag/ingest.ts`, tests
 
 **Changes:**
+
+- Seed data (deterministic): ~20 customers, ~100 orders (plan purchases/add-ons, `ORD-xxxx` ids), a few tickets.
 
 - Tables: `documents`, `chunks` (`embedding vector(384)`, `tsv tsvector`, `content_hash`), HNSW index on embedding, GIN on tsv.
 - Heading-aware chunker (~400 tokens, ~15% overlap, keeps heading path as metadata).

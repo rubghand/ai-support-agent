@@ -13,7 +13,8 @@
     "dev": "npm run dev -w @app/web",
     "build": "npm run build -w @app/web",
     "lint": "eslint . && npm run lint -w @app/web",
-    "typecheck": "npm run typecheck --workspaces --if-present",
+    "typecheck": "tsc --noEmit -p . && npm run typecheck --workspaces --if-present",
+    "kb:lint": "tsx scripts/kb-lint.ts",
     "test": "vitest run",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -24,6 +25,7 @@
     "@types/node": "^22",
     "eslint": "^9",
     "prettier": "^3",
+    "tsx": "^4.23.15",
     "typescript": "^5",
     "typescript-eslint": "^8",
     "vitest": "^3"

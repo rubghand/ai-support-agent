@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {
+    "gray-matter": "^4.0.3",
     "zod": "^4"
   }
 }
