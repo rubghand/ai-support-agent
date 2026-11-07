@@ -22,3 +22,6 @@ next-env.d.ts
 *.pem
 npm-debug.log*
 scratch/
+
+# private study notes
+LEARNING_NOTES.md
