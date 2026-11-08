@@ -1,33 +1,9 @@
-import { createHash } from "node:crypto";
 import { type Db, chunks, createDb, documents, runMigrations } from "@app/db";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { KbDocument } from "../kb/load";
-import type { Embedder } from "./embed";
+import { TEST_DATABASE_URL, fakeEmbedder } from "../testing/fake-embedder";
 import { ingestKnowledgeBase } from "./ingest";
-
-const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL ?? "postgres://agent:agent@localhost:5455/agent_test";
-
-/** Deterministic fake embedder: no model download, counts how many texts it embedded. */
-function fakeEmbedder(): Embedder & { calls: number } {
-  const vectorFor = (text: string) => {
-    const bytes = createHash("sha256").update(text).digest();
-    const raw = Array.from({ length: 384 }, (_, i) => bytes[i % bytes.length]! - 128);
-    const norm = Math.hypot(...raw);
-    return raw.map((v) => v / norm);
-  };
-  const embedder = {
-    model: "fake",
-    dimensions: 384,
-    calls: 0,
-    embedDocuments: async (texts: string[]) => {
-      embedder.calls += texts.length;
-      return texts.map(vectorFor);
-    },
-    embedQuery: async (text: string) => vectorFor(text),
-  };
-  return embedder;
-}
 
 const doc = (id: string, body: string): KbDocument => ({
   id,

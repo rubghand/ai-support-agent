@@ -15,3 +15,10 @@ export {
 } from "./rag/chunk";
 export { EMBEDDING_MODEL, createLocalEmbedder, type Embedder } from "./rag/embed";
 export { ingestKnowledgeBase, type IngestStats } from "./rag/ingest";
+export {
+  reciprocalRankFusion,
+  retrieve,
+  type RetrievalMode,
+  type RetrieveOptions,
+  type RetrievedChunk,
+} from "./rag/search";

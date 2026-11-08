@@ -17,21 +17,22 @@ Hardware: Apple M4 Max, 48 GB RAM — enough for a 14B local model plus Docker s
 
 ## Progress (update after every phase)
 
-**Next up:** Phase 4 — hybrid retrieval (vector + full-text, RRF fusion) and `npm run search`.
+**Next up:** Phase 5 — LLM provider layer + structured, cited answers (`npm run ask`).
 
-| Phase | Status      | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| ----- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0     | Done        | Ollama 0.40 via `brew services`; `qwen3:4b` (small) tool call verified (~5.6s, pass `think:false`). `qwen3:14b` (large, 9.3 GB) tool call verified (~3.3s warm). Gemini key not yet created (optional).                                                                                                                                                                                                                                                                                                                          |
-| 1     | Done        | npm workspaces (`@app/web`, `@app/core`), Next.js 16.4 + Tailwind 4, ESLint 9, Prettier, Vitest, CI workflow. Postgres+pgvector 0.8.7 on **host port 5455** (5432/5433/5442/5443 are used by work repos).                                                                                                                                                                                                                                                                                                                        |
-| 2     | Done        | 32 docs in `knowledge-base/` (9 categories). Traps: `refund-policy-2024` (outdated, conflicts with `refund-policy`), credit notes vs subscription refunds (near-duplicates), hidden injection comment in `troubleshooting/sync-errors.md`. Loader/validator in `packages/core/src/kb/load.ts`; `npm run kb:lint` in CI. Seed data moved to Phase 3.                                                                                                                                                                              |
-| 3     | Done        | `@app/db` package (Drizzle 0.45 + `pg`): 5 tables, migrations `0000_enable_pgvector` (custom) + `0001_init_schema`. Seed fixtures used by evals: `ORD-1042` (CUS-001, Priority support, paid), `ORD-1043` (CUS-002, Growth annual), `ORD-1044` (CUS-003, failed), `ORD-1045` (CUS-001, refunded). Ingest: 32 docs → 56 chunks (60–296 tokens, avg 140), first run 38.8s incl. model download, re-run embeds 0. Smoke test: correct doc ranked #1 for 3 sample questions. CI has a new `integration` job with a pgvector service. |
-| 4–18  | Not started |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Phase | Status      | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ----- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0     | Done        | Ollama 0.40 via `brew services`; `qwen3:4b` (small) tool call verified (~5.6s, pass `think:false`). `qwen3:14b` (large, 9.3 GB) tool call verified (~3.3s warm). Gemini key not yet created (optional).                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| 1     | Done        | npm workspaces (`@app/web`, `@app/core`), Next.js 16.4 + Tailwind 4, ESLint 9, Prettier, Vitest, CI workflow. Postgres+pgvector 0.8.7 on **host port 5455** (5432/5433/5442/5443 are used by work repos).                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| 2     | Done        | 32 docs in `knowledge-base/` (9 categories). Traps: `refund-policy-2024` (outdated, conflicts with `refund-policy`), credit notes vs subscription refunds (near-duplicates), hidden injection comment in `troubleshooting/sync-errors.md`. Loader/validator in `packages/core/src/kb/load.ts`; `npm run kb:lint` in CI. Seed data moved to Phase 3.                                                                                                                                                                                                                                                                                                              |
+| 3     | Done        | `@app/db` package (Drizzle 0.45 + `pg`): 5 tables, migrations `0000_enable_pgvector` (custom) + `0001_init_schema`. Seed fixtures used by evals: `ORD-1042` (CUS-001, Priority support, paid), `ORD-1043` (CUS-002, Growth annual), `ORD-1044` (CUS-003, failed), `ORD-1045` (CUS-001, refunded). Ingest: 32 docs → 56 chunks (60–296 tokens, avg 140), first run 38.8s incl. model download, re-run embeds 0. Smoke test: correct doc ranked #1 for 3 sample questions. CI has a new `integration` job with a pgvector service.                                                                                                                                 |
+| 4     | Done        | `retrieve()` in `packages/core/src/rag/search.ts`: vector (pgvector cosine) + keyword, fused with weighted RRF (k=60). Keyword scoring is IDF-weighted (BM25-style, binary tf, heading boost 1.5) because Postgres `ts_rank` has no IDF. Started the golden set early (`evals/golden.jsonl`, 35 retrieval cases) + `npm run eval:retrieval [--all]`. Default hybrid (idf, 1:1): hit@1 74.3%, hit@3 94.3%, hit@5 100%, MRR 0.852 (vector-only 88.6% hit@3, ts_rank keyword 77.1%). Chose 1:1 over 2:1 (97.1% hit@3) to avoid overfitting a 35-case set. CI gate: hit@3 ≥ 90%. Known issue: stale `refund-policy-2024` still ranks #4 for "how do I get a refund". |
+| 5–18  | Not started |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 
 ### Resume checklist
 
 1. `brew services start ollama` (if not running) and start Docker Desktop.
 2. `npm install && npm run setup` (starts DB, migrates, seeds, ingests).
-3. `npm run lint && npm run typecheck && npm test && npm run test:integration` should be green before starting the next phase.
+3. `npm run lint && npm run typecheck && npm test && npm run test:integration && npm run eval:retrieval` should be green before starting the next phase.
 4. Git: commits use the repo-local identity `rubghand@gmail.com`; push to the personal GitHub remote
    (not the work `gh` account).
 
@@ -49,6 +50,11 @@ Hardware: Apple M4 Max, 48 GB RAM — enough for a 14B local model plus Docker s
   components (Phase 6), add subpath exports (e.g. `@app/core/client`) instead of importing the root.
 - The hidden injection comment in `sync-errors.md` is intentionally kept in chunk content (not stripped) so
   guardrails can be tested against it.
+- `evals/golden.jsonl` currently holds only `answerable` retrieval cases (`ret-*`). Phase 7 extends the schema
+  in `evals/cases.ts` (expected behaviour, unanswerable/off-topic/injection categories) rather than starting over.
+- Golden questions were written by the same author as the docs; expect real-user queries to score lower.
+- Phase 5 should pass `updatedOn` to the LLM and tell it to prefer the newest doc when sources conflict
+  (stale `refund-policy-2024` is retrieved for refund questions).
 
 ## Target architecture
 
@@ -146,14 +152,16 @@ ai-project/
 
 ### Phase 4: Hybrid retrieval
 
-**File(s):** `packages/core/rag/search.ts`, `packages/core/rag/search.test.ts`, `scripts/search.ts`
+**File(s):** `packages/core/src/rag/search.ts` (+ unit and integration tests), `scripts/search.ts`, `evals/{golden.jsonl,cases.ts,retrieval.ts}`, `evals/scorers/retrieval.ts`
 
 **Changes:**
 
-- Vector search (cosine) + Postgres full-text search, fused with Reciprocal Rank Fusion.
-- `retrieve(query, k)` returns chunks with `docId`, `chunkId`, `title`, `url`, `score`.
+- Vector search (cosine) + Postgres full-text search, fused with weighted Reciprocal Rank Fusion.
+- IDF-weighted keyword scoring (alternative `ts_rank` kept for comparison).
+- `retrieve(query, options)` returns chunks with `documentId`, `chunkId`, `title`, `url`, `score`, and per-retriever ranks.
+- Retrieval eval (moved forward from Phase 7): hit@1/3/5 + MRR per configuration; CI gate on hit@3.
 
-**Verify:** `npx vitest run packages/core/rag/search.test.ts && npm run search -- "how do I get a refund"` → refund policy doc in top 3.
+**Verify:** `npm test && npm run test:integration && npm run eval:retrieval -- --all --min-hit3 0.9`; `npm run search -- "how do I get a refund"` → refund policy doc in top 3.
 
 ---
 

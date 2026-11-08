@@ -1,0 +1,35 @@
+{"id":"ret-01","category":"answerable","question":"how do I get a refund","expectedDocIds":["refund-policy"]}
+{"id":"ret-02","category":"answerable","question":"can I get my money back for a monthly plan?","expectedDocIds":["refund-policy"]}
+{"id":"ret-03","category":"answerable","question":"my client wants their money back for an invoice they already paid","expectedDocIds":["credit-notes"]}
+{"id":"ret-04","category":"answerable","question":"SEPA fees","expectedDocIds":["payment-methods"]}
+{"id":"ret-05","category":"answerable","question":"I keep getting error 429 from the API","expectedDocIds":["api-rate-limits"]}
+{"id":"ret-06","category":"answerable","question":"QuickBooks says duplicate document number","expectedDocIds":["sync-errors"]}
+{"id":"ret-07","category":"answerable","question":"how long until a payout reaches my bank?","expectedDocIds":["payouts"]}
+{"id":"ret-08","category":"answerable","question":"I lost my phone and can't log in","expectedDocIds":["two-factor-auth"]}
+{"id":"ret-09","category":"answerable","question":"how do I add a colleague to my account","expectedDocIds":["invite-team"]}
+{"id":"ret-10","category":"answerable","question":"can I charge clients extra when they pay late?","expectedDocIds":["late-fees-reminders"]}
+{"id":"ret-11","category":"answerable","question":"send the same invoice to a client every month automatically","expectedDocIds":["recurring-invoices"]}
+{"id":"ret-12","category":"answerable","question":"what's the difference between Starter and Growth?","expectedDocIds":["plans-and-pricing"]}
+{"id":"ret-13","category":"answerable","question":"will I be charged right away if I upgrade?","expectedDocIds":["change-plan"]}
+{"id":"ret-14","category":"answerable","question":"how do I close my account permanently","expectedDocIds":["cancel-subscription"]}
+{"id":"ret-15","category":"answerable","question":"my customer says they never got the invoice email","expectedDocIds":["email-delivery"]}
+{"id":"ret-16","category":"answerable","question":"how do I check that a webhook really came from Ledgerly","expectedDocIds":["api-webhooks"]}
+{"id":"ret-17","category":"answerable","question":"where do I create an API key","expectedDocIds":["api-authentication"]}
+{"id":"ret-18","category":"answerable","question":"do you store my clients' card numbers?","expectedDocIds":["data-security"]}
+{"id":"ret-19","category":"answerable","question":"download all my invoices as PDFs","expectedDocIds":["gdpr-data-export"]}
+{"id":"ret-20","category":"answerable","question":"Ledgerly payments isn't available in my country, what can I use?","expectedDocIds":["stripe-connect","accept-online-payments"]}
+{"id":"ret-21","category":"answerable","question":"post a message in Slack when an invoice gets paid","expectedDocIds":["zapier"]}
+{"id":"ret-22","category":"answerable","question":"is VAT added to my Ledgerly subscription","expectedDocIds":["taxes-vat"]}
+{"id":"ret-23","category":"answerable","question":"how much does it cost to text my clients reminders","expectedDocIds":["add-ons"]}
+{"id":"ret-24","category":"answerable","question":"the pay button doesn't show up on my invoices","expectedDocIds":["accept-online-payments","stripe-connect"]}
+{"id":"ret-25","category":"answerable","question":"an automatic card charge failed, will you try again?","expectedDocIds":["failed-payments"]}
+{"id":"ret-26","category":"answerable","question":"can I change an invoice after it's been paid","expectedDocIds":["create-edit-invoices","credit-notes"]}
+{"id":"ret-27","category":"answerable","question":"remove the Powered by Ledgerly footer","expectedDocIds":["invoice-templates"]}
+{"id":"ret-28","category":"answerable","question":"can I try it before paying","expectedDocIds":["faq","create-account"]}
+{"id":"ret-29","category":"answerable","question":"what does Ledgerly do","expectedDocIds":["overview"]}
+{"id":"ret-30","category":"answerable","question":"how do I bill a client for the first time","expectedDocIds":["first-invoice"]}
+{"id":"ret-31","category":"answerable","question":"change the prefix of my invoice numbers","expectedDocIds":["first-invoice"]}
+{"id":"ret-32","category":"answerable","question":"what happens if a client disputes a card payment","expectedDocIds":["payment-methods"]}
+{"id":"ret-33","category":"answerable","question":"if I edit a customer in QuickBooks does it update in Ledgerly?","expectedDocIds":["quickbooks"]}
+{"id":"ret-34","category":"answerable","question":"do charities get a discount","expectedDocIds":["faq"]}
+{"id":"ret-35","category":"answerable","question":"can I switch my reporting currency to euros","expectedDocIds":["create-account"]}
