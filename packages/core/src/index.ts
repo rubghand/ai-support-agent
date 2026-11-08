@@ -1,4 +1,14 @@
-export { loadConfig, type AppConfig } from "./config";
+export { DEFAULT_MODELS, LLM_PROVIDERS, loadConfig, type AppConfig, type LlmProvider } from "./config";
+export { createLlm, type Llm, type ModelTier } from "./llm/provider";
+export { SUPPORT_SYSTEM_PROMPT } from "./prompts/system";
+export {
+  answerQuestion,
+  answerSchema,
+  generateCitedAnswer,
+  type AnswerDeps,
+  type CitedAnswer,
+  type Citation,
+} from "./rag/answer";
 export {
   frontmatterSchema,
   loadKnowledgeBase,

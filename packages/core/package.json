@@ -10,10 +10,14 @@
     "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^4.0.99",
+    "@ai-sdk/google": "^4.0.114",
     "@app/db": "*",
     "@huggingface/transformers": "^4.3.2",
+    "ai": "^7.0.165",
     "drizzle-orm": "^0.45.4",
     "gray-matter": "^4.0.3",
+    "ollama-ai-provider-v2": "^4.1.0",
     "zod": "^4"
   }
 }

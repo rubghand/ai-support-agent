@@ -19,10 +19,12 @@ npm run setup   # start Postgres, migrate, seed, ingest the knowledge base
 npm run dev
 ```
 
-## Try retrieval
+## Try it
 
 ```bash
-npm run search -- "can I get my money back for a monthly plan?"
+npm run ask -- "Can I get a refund on my monthly plan?"            # cited answer (qwen3:14b)
+npm run ask -- "Can I get a refund on my monthly plan?" --tier small
+npm run search -- "can I get my money back for a monthly plan?"    # retrieval only
 npm run eval:retrieval -- --all   # compare retrieval configurations on the golden set
 ```
 

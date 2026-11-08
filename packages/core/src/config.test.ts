@@ -6,6 +6,7 @@ describe("loadConfig", () => {
     const config = loadConfig({});
     expect(config.LLM_PROVIDER).toBe("ollama");
     expect(config.MODEL_SMALL).toBe("qwen3:4b");
+    expect(config.MODEL_LARGE).toBe("qwen3:14b");
     expect(config.DATABASE_URL).toContain("localhost:5455");
   });
 
@@ -13,10 +14,18 @@ describe("loadConfig", () => {
     expect(() => loadConfig({ LLM_PROVIDER: "openai" })).toThrow(/Invalid environment/);
   });
 
-  it("requires an API key for hosted providers", () => {
-    expect(() => loadConfig({ LLM_PROVIDER: "google" })).toThrow(/GOOGLE_GENERATIVE_AI_API_KEY/);
+  it("requires an API key for hosted providers and treats empty values as unset", () => {
+    expect(() => loadConfig({ LLM_PROVIDER: "google", GOOGLE_GENERATIVE_AI_API_KEY: "" })).toThrow(
+      /GOOGLE_GENERATIVE_AI_API_KEY/,
+    );
     expect(loadConfig({ LLM_PROVIDER: "google", GOOGLE_GENERATIVE_AI_API_KEY: "k" }).LLM_PROVIDER).toBe(
       "google",
     );
+  });
+
+  it("uses provider-specific model defaults unless overridden", () => {
+    const google = loadConfig({ LLM_PROVIDER: "google", GOOGLE_GENERATIVE_AI_API_KEY: "k" });
+    expect(google.MODEL_SMALL).toMatch(/^gemini/);
+    expect(loadConfig({ MODEL_LARGE: "llama3.1:8b" }).MODEL_LARGE).toBe("llama3.1:8b");
   });
 });
