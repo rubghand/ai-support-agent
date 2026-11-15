@@ -87,3 +87,15 @@ export {
 export { loadMcpToolset, type McpClientLike, type McpToolset } from "./agent/mcp-toolset";
 export { describeToolCall } from "./agent/tool-labels";
 export { AGENT_SYSTEM_PROMPT } from "./prompts/agent";
+export {
+  MEMORY_DEFAULTS,
+  planContext,
+  toModelMessages,
+  type ContextPlan,
+  type HistoryMessage,
+  type MemoryOptions,
+  type StoredSummary,
+} from "./memory/context";
+export { loadConversationHistory, type ConversationHistory, type LoadHistoryOptions } from "./memory/history";
+export { summarizeConversation, withKeyFacts } from "./memory/summarize";
+export { countTokens, truncateToTokens } from "./memory/tokens";

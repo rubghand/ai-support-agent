@@ -200,6 +200,20 @@ describe("runAgent", () => {
     expect(answer.toolCalls).toMatchObject([{ id: "auto-search", name: "search_docs" }]);
   });
 
+  it("sends earlier turns before the question so follow-ups have context", async () => {
+    const { llm } = scriptedLlm([{ tool: "lookup_order", input: { orderId: "ORD-1042" } }], reply());
+    const { mcp } = fakeMcp({ lookup_order: { ok: true, text: '{"status":"paid"}' } });
+    const history = [
+      { role: "user" as const, content: "What's the status of ORD-1042?" },
+      { role: "assistant" as const, content: "ORD-1042 is paid." },
+    ];
+    const model = llm.model("large") as MockLanguageModelV4;
+    await collect(runAgent({ llm, mcp, search: async () => [] }, "Is it refundable?", { history }));
+    const prompt = model.doGenerateCalls[0]!.prompt;
+    expect(prompt.map((m) => m.role)).toEqual(["system", "user", "assistant", "user"]);
+    expect(JSON.stringify(prompt.at(-1))).toContain("Is it refundable?");
+  });
+
   it("stops requesting tools after maxSteps and still produces an answer", async () => {
     const forever: Step[] = Array.from({ length: 10 }, () => ({
       tool: "lookup_order",

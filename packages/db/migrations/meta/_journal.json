@@ -43,6 +43,13 @@
       "when": 1794761480869,
       "tag": "0005_handy_riptide",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794762900016,
+      "tag": "0006_fuzzy_jamie_braddock",
+      "breakpoints": true
     }
   ]
 }

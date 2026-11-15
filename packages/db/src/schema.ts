@@ -123,6 +123,9 @@ export const conversations = pgTable("conversations", {
   userId: integer("user_id")
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
+  /** Rolling summary of the messages up to `summarizedThroughId`; later messages are sent verbatim. */
+  summary: text("summary"),
+  summarizedThroughId: integer("summarized_through_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

@@ -16,8 +16,13 @@ export async function ensureConversation(db: Db, userId: number, id?: string): P
   return newId;
 }
 
-export async function saveUserMessage(db: Db, conversationId: string, content: string) {
-  await db.insert(messages).values({ conversationId, role: "user", content });
+/** Returns the new message id. */
+export async function saveUserMessage(db: Db, conversationId: string, content: string): Promise<number> {
+  const [row] = await db
+    .insert(messages)
+    .values({ conversationId, role: "user", content })
+    .returning({ id: messages.id });
+  return row!.id;
 }
 
 export async function saveAssistantMessage(

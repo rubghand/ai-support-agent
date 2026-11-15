@@ -4,6 +4,7 @@ import {
   consume,
   encodeSse,
   ensureConversation,
+  loadConversationHistory,
   retrieve,
   runAgent,
   saveAssistantMessage,
@@ -50,7 +51,7 @@ export async function POST(request: Request) {
   const { message, conversationId: requestedId, tier } = parsed.data;
   const conversationId = await ensureConversation(db, userId, requestedId);
   if (!conversationId) return Response.json({ error: "Conversation not found" }, { status: 404 });
-  await saveUserMessage(db, conversationId, message);
+  const userMessageId = await saveUserMessage(db, conversationId, message);
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
@@ -60,10 +61,14 @@ export async function POST(request: Request) {
       const mcp = await createInProcessClient({ db, identity: session.user, conversationId });
       try {
         send({ type: "meta", conversationId });
+        const history = await loadConversationHistory({ db, llm }, conversationId, {
+          beforeId: userMessageId,
+          signal: request.signal,
+        });
         const events = runAgent(
           { llm, mcp: mcp.client, search: (query) => retrieve(db, embedder, query, { k: 5 }) },
           message,
-          { tier, signal: request.signal },
+          { tier, history: history.messages, signal: request.signal },
         );
         for await (const event of events) {
           switch (event.type) {

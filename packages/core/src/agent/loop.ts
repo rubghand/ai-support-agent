@@ -21,6 +21,8 @@ export interface AgentDeps {
 
 export interface AgentOptions {
   tier?: ModelTier;
+  /** Earlier turns of the conversation (see `loadConversationHistory`), placed before the question. */
+  history?: ModelMessage[];
   /** Maximum model calls that may request tools before the agent must answer. */
   maxSteps?: number;
   /** Per model call and per tool call. */
@@ -86,14 +88,14 @@ const TOOL_RESULT_LIMIT = 6000;
 export async function* runAgent(
   { llm, mcp, search }: AgentDeps,
   question: string,
-  { tier = "large", maxSteps = 5, stepTimeoutMs = 60_000, signal }: AgentOptions = {},
+  { tier = "large", history = [], maxSteps = 5, stepTimeoutMs = 60_000, signal }: AgentOptions = {},
 ): AsyncGenerator<AgentEvent> {
   const started = performance.now();
   const toolset = await loadMcpToolset(mcp);
   const tools: ToolSet = { [SEARCH_DOCS]: searchDocsTool, ...toolset.definitions };
   const sources: Source[] = [];
   const records: ToolCallRecord[] = [];
-  const messages: ModelMessage[] = [{ role: "user", content: question }];
+  const messages: ModelMessage[] = [...history, { role: "user", content: question }];
   const usage = { inputTokens: 0, outputTokens: 0 };
   const withTimeout = () =>
     signal

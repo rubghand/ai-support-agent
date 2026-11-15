@@ -19,6 +19,7 @@
     "ai": "^7.0.165",
     "drizzle-orm": "^0.45.4",
     "gray-matter": "^4.0.3",
+    "js-tiktoken": "^1.0.21",
     "ollama-ai-provider-v2": "^4.1.0",
     "zod": "^4"
   }
