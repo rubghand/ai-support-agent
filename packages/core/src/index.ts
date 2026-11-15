@@ -9,6 +9,9 @@ export {
   type CitedAnswer,
   type Citation,
 } from "./rag/answer";
+export { streamCitedAnswer, type AnswerStreamEvent } from "./rag/answer-stream";
+export { encodeSse, parseSse, type ChatEvent, type ChatTier } from "./chat/events";
+export { ensureConversation, listMessages, saveAssistantMessage, saveUserMessage } from "./chat/store";
 export {
   frontmatterSchema,
   loadKnowledgeBase,

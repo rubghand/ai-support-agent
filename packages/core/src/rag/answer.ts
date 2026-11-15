@@ -126,6 +126,20 @@ export async function generateCitedAnswer(
     );
   }
 
+  return finalizeAnswer(output, sources, {
+    model: llm.modelId(tier),
+    usage,
+    latencyMs: Math.round(performance.now() - started),
+    attempts,
+  });
+}
+
+/** Resolves citations and applies the grounding rule; shared by the blocking and streaming paths. */
+export function finalizeAnswer(
+  output: ModelAnswer,
+  sources: Source[],
+  meta: Pick<CitedAnswer, "model" | "usage" | "latencyMs" | "attempts">,
+): CitedAnswer {
   const resolved = resolveCitations(output, sources);
   const grounded = resolved.citations.length > 0;
   return {
@@ -134,10 +148,7 @@ export async function generateCitedAnswer(
     confidence: grounded ? output.confidence : "low",
     needsHuman: output.needsHuman,
     grounded,
-    model: llm.modelId(tier),
-    usage,
-    latencyMs: Math.round(performance.now() - started),
-    attempts,
+    ...meta,
   };
 }
 

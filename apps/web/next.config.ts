@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  transpilePackages: ["@app/core"],
+  transpilePackages: ["@app/core", "@app/db"],
+  serverExternalPackages: ["@huggingface/transformers", "onnxruntime-node", "pg"],
   cacheComponents: true,
   partialPrefetching: true,
   turbopack: {

@@ -15,6 +15,13 @@
       "when": 1794044828386,
       "tag": "0001_init_schema",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794723419314,
+      "tag": "0002_wandering_zuras",
+      "breakpoints": true
     }
   ]
 }
