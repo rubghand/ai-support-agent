@@ -1,8 +1,26 @@
 "use client";
 
-import { type ChatEvent, type Citation, parseSse } from "@app/core/client";
+import {
+  type ActionStatus,
+  type ActionUpdate,
+  type ChatEvent,
+  type Citation,
+  parseSse,
+} from "@app/core/client";
 import { useRouter } from "next/navigation";
-import { type FormEvent, useRef, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
+
+const APPROVAL_POLL_MS = 4000;
+
+const APPROVAL_LABEL: Record<ActionStatus, string> = {
+  pending: "Waiting for staff approval",
+  approved: "Approved, processing…",
+  executed: "Approved",
+  rejected: "Declined by staff",
+  failed: "Approved, but couldn't be completed",
+};
+
+const isOpen = (status: ActionStatus) => status === "pending" || status === "approved";
 
 interface ToolStep {
   id: string;
@@ -16,6 +34,7 @@ interface UiMessage {
   text: string;
   citations: Citation[];
   tools: ToolStep[];
+  approval?: { actionId: number; summary: string; status: ActionStatus };
   needsHuman?: boolean;
   grounded?: boolean;
   streaming?: boolean;
@@ -33,6 +52,38 @@ export function ChatWidget() {
   const patchLast = (patch: (m: UiMessage) => UiMessage) =>
     setMessages((all) => all.map((m, i) => (i === all.length - 1 ? patch(m) : m)));
 
+  // Staff decide asynchronously; poll open requests and post the outcome as a new assistant message.
+  const waitingIds = messages
+    .flatMap((m) => (m.approval && isOpen(m.approval.status) ? [m.approval.actionId] : []))
+    .join(",");
+  useEffect(() => {
+    if (!waitingIds) return;
+    const ids = waitingIds.split(",").map(Number);
+    const timer = setInterval(async () => {
+      for (const actionId of ids) {
+        const res = await fetch(`/api/actions/${actionId}`, { cache: "no-store" }).catch(() => null);
+        if (!res?.ok) continue;
+        const update = (await res.json()) as ActionUpdate;
+        if (update.message === null) continue;
+        const text = update.message;
+        const id = nextId.current++;
+        setMessages((all) => {
+          const open = all.some((m) => m.approval?.actionId === actionId && isOpen(m.approval.status));
+          if (!open) return all;
+          return [
+            ...all.map((m) =>
+              m.approval?.actionId === actionId
+                ? { ...m, approval: { ...m.approval, status: update.status } }
+                : m,
+            ),
+            { id, role: "assistant", text, citations: [], tools: [] },
+          ];
+        });
+      }
+    }, APPROVAL_POLL_MS);
+    return () => clearInterval(timer);
+  }, [waitingIds]);
+
   const apply = (event: ChatEvent) => {
     switch (event.type) {
       case "meta":
@@ -44,6 +95,12 @@ export function ChatWidget() {
           tools: m.tools.some((t) => t.id === event.id)
             ? m.tools.map((t) => (t.id === event.id ? { ...t, status: event.status } : t))
             : [...m.tools, { id: event.id, label: event.label, status: event.status }],
+        }));
+        break;
+      case "approval":
+        patchLast((m) => ({
+          ...m,
+          approval: { actionId: event.actionId, summary: event.summary, status: "pending" },
         }));
         break;
       case "token":
@@ -153,6 +210,20 @@ export function ChatWidget() {
                   </li>
                 ))}
               </ul>
+            )}
+            {m.approval && (
+              <div
+                className={`mt-1 max-w-[85%] rounded-md border px-3 py-2 text-xs ${
+                  m.approval.status === "executed"
+                    ? "border-emerald-300 bg-emerald-50 text-emerald-900"
+                    : m.approval.status === "rejected" || m.approval.status === "failed"
+                      ? "border-red-300 bg-red-50 text-red-900"
+                      : "border-amber-300 bg-amber-50 text-amber-900"
+                }`}
+              >
+                <p className="font-medium">{APPROVAL_LABEL[m.approval.status]}</p>
+                <p>{m.approval.summary}</p>
+              </div>
             )}
             {m.needsHuman && (
               <p className="mt-1 text-xs text-amber-700">A human agent should follow up on this one.</p>

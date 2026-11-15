@@ -12,7 +12,14 @@ export {
   type Citation,
 } from "./rag/answer";
 export { streamCitedAnswer, type AnswerStreamEvent } from "./rag/answer-stream";
-export { encodeSse, parseSse, type ChatEvent, type ChatTier } from "./chat/events";
+export {
+  encodeSse,
+  parseSse,
+  type ActionStatus,
+  type ActionUpdate,
+  type ChatEvent,
+  type ChatTier,
+} from "./chat/events";
 export { ensureConversation, listMessages, saveAssistantMessage, saveUserMessage } from "./chat/store";
 export {
   frontmatterSchema,
@@ -46,13 +53,21 @@ export {
   type RateLimitResult,
 } from "./ratelimit";
 export {
+  approvalPendingSchema,
   createTicket,
+  customerUpdate,
+  decideAction,
   escalateToHuman,
   executeTool,
+  getActionForUser,
   getTool,
+  listActions,
   lookupOrder,
   requestRefund,
   tools,
+  type ApprovalPending,
+  type ApprovalRequest,
+  type Decision,
   type Identity,
   type ToolContext,
   type ToolDefinition,

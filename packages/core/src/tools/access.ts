@@ -28,3 +28,6 @@ export async function findAccessibleOrder(db: Db, identity: Identity, orderId: s
 export function actingCustomerId(identity: Identity): string | null {
   return identity.role === "customer" ? identity.customerId : null;
 }
+
+/** `pending_actions.subject_key` of a refund request for an order. */
+export const orderSubjectKey = (orderId: string) => `order:${orderId}`;

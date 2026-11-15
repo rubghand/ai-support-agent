@@ -87,10 +87,13 @@ describe("MCP server over HTTP", () => {
     await lucas.close();
   });
 
-  it("files a refund request (high risk) through MCP, and reports domain errors as tool errors", async () => {
+  it("files a refund request (high risk) for approval through MCP, and reports domain errors as tool errors", async () => {
     const lucas = await connect(await tokenFor("lucas@moreauconsulting.example"));
     const filed = await call(lucas, "request_refund", { orderId: "ORD-1043", reason: "Test" });
-    expect(filed).toMatchObject({ isError: false, body: { status: "requested", amountCents: 38400 } });
+    expect(filed).toMatchObject({
+      isError: false,
+      body: { status: "pending_approval", summary: "Refund $384.00 for order ORD-1043 (Growth (annual))" },
+    });
     const again = await call(lucas, "request_refund", { orderId: "ORD-1043", reason: "Again" });
     expect(again).toMatchObject({ isError: true, body: { code: "conflict" } });
     await lucas.close();

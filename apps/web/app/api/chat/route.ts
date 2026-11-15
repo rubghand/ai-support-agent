@@ -57,7 +57,7 @@ export async function POST(request: Request) {
     async start(controller) {
       const send = (event: ChatEvent) => controller.enqueue(encoder.encode(encodeSse(event)));
       // One MCP client per request, bound to the verified session's identity.
-      const mcp = await createInProcessClient({ db, identity: session.user });
+      const mcp = await createInProcessClient({ db, identity: session.user, conversationId });
       try {
         send({ type: "meta", conversationId });
         const events = runAgent(
@@ -78,6 +78,9 @@ export async function POST(request: Request) {
                 label: "",
                 status: event.ok ? "done" : "failed",
               });
+              break;
+            case "approval_pending":
+              send({ type: "approval", actionId: event.actionId, summary: event.summary });
               break;
             case "token":
               send(event);

@@ -2,11 +2,24 @@ import type { Citation } from "../rag/answer";
 
 export type ChatTier = "small" | "large";
 
+export type ActionStatus = "pending" | "approved" | "rejected" | "executed" | "failed";
+
+/** What a customer sees about one of their approval requests (`GET /api/actions/:id`). */
+export interface ActionUpdate {
+  id: number;
+  status: ActionStatus;
+  summary: string;
+  /** Customer-facing outcome, once staff have decided; null while waiting. */
+  message: string | null;
+}
+
 /** Wire format of `/api/chat`. Client-safe: no server imports besides types. */
 export type ChatEvent =
   | { type: "meta"; conversationId: string }
   /** The agent started or finished a tool; `label` is customer-facing ("Looking up order ORD-1042…"). */
   | { type: "tool"; id: string; name: string; label: string; status: "running" | "done" | "failed" }
+  /** A high-risk action was filed and waits for staff; poll `GET /api/actions/:actionId` for the outcome. */
+  | { type: "approval"; actionId: number; summary: string }
   | { type: "token"; text: string }
   | {
       type: "citations";

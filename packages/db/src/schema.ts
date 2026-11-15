@@ -166,7 +166,10 @@ export const rateLimits = pgTable("rate_limits", {
 
 export const refundStatusEnum = pgEnum("refund_status", ["requested", "approved", "rejected"]);
 
-/** A refund *request*. Nothing is paid out until a human approves it (Phase 12). */
+/**
+ * An issued refund. Rows are created only when staff approve a `request_refund` action; the request
+ * itself lives in `pending_actions` until then. (`requested`/`rejected` are kept for the enum's history.)
+ */
 export const refunds = pgTable(
   "refunds",
   {
@@ -206,4 +209,53 @@ export const auditLog = pgTable(
     details: jsonb("details").$type<Record<string, unknown>>().notNull().default({}),
   },
   (t) => [index("audit_log_target_idx").on(t.targetType, t.targetId)],
+);
+
+// ---------- Human-in-the-loop approvals ----------
+
+/**
+ * `approved` means a staff member claimed the action and it is executing; it ends as `executed` or
+ * `failed` (the tool's re-check or execution refused it). `rejected` actions never run.
+ */
+export const actionStatusEnum = pgEnum("action_status", [
+  "pending",
+  "approved",
+  "rejected",
+  "executed",
+  "failed",
+]);
+
+/** A high-risk tool call that waits for a human decision before it runs. */
+export const pendingActions = pgTable(
+  "pending_actions",
+  {
+    id: serial("id").primaryKey(),
+    toolName: text("tool_name").notNull(),
+    /** Validated tool input, replayed on approval. */
+    args: jsonb("args").$type<Record<string, unknown>>().notNull(),
+    /** What the approver is asked to approve, e.g. "Refund $29.00 for order ORD-1042 (Priority support)". */
+    summary: text("summary").notNull(),
+    /** What the action targets, e.g. `order:ORD-1042`. */
+    subjectKey: text("subject_key").notNull(),
+    requestedByUserId: integer("requested_by_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** Where to notify the customer; null for calls from external MCP clients. */
+    conversationId: text("conversation_id").references(() => conversations.id, { onDelete: "set null" }),
+    status: actionStatusEnum("status").notNull().default("pending"),
+    decidedByUserId: integer("decided_by_user_id").references(() => users.id, { onDelete: "set null" }),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    /** Optional note from staff, shown to the customer. */
+    decisionNote: text("decision_note"),
+    /** Tool result after execution: `{ ok, data }` or `{ ok: false, error }`. */
+    result: jsonb("result").$type<Record<string, unknown>>(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // One open action per tool and subject, so duplicate or concurrent requests are decided by the database.
+    uniqueIndex("pending_actions_one_open_idx")
+      .on(t.toolName, t.subjectKey)
+      .where(sql`${t.status} in ('pending', 'approved')`),
+    index("pending_actions_status_idx").on(t.status, t.createdAt),
+  ],
 );

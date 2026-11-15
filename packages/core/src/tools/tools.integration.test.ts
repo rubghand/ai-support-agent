@@ -4,13 +4,14 @@ import {
   createDb,
   generateSeedData,
   orders,
+  pendingActions,
   refunds,
   runMigrations,
   seedDatabase,
   tickets,
   users,
 } from "@app/db";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { TEST_DATABASE_URL } from "../testing/fake-embedder";
 import { type ToolContext, executeTool } from "./index";
@@ -97,15 +98,29 @@ describe("tools (Postgres)", () => {
   });
 
   describe("request_refund", () => {
-    it("files a request without refunding anything, and audits it", async () => {
+    it("files a request for staff approval without refunding anything, and audits it", async () => {
       const result = await executeTool(maya, "request_refund", { orderId: "ORD-1042", reason: "Not needed" });
-      expect(result).toMatchObject({ ok: true, data: { status: "requested", amountCents: 2900 } });
+      expect(result).toMatchObject({
+        ok: true,
+        data: { status: "pending_approval", summary: "Refund $29.00 for order ORD-1042 (Priority support)" },
+      });
       const [order] = await db.select().from(orders).where(eq(orders.id, "ORD-1042"));
       expect(order!.status).toBe("paid");
-      const audit = await db.select().from(auditLog).where(eq(auditLog.action, "refund.requested"));
+      expect(await db.select().from(refunds)).toHaveLength(0);
+      const [action] = await db.select().from(pendingActions);
+      expect(action).toMatchObject({
+        toolName: "request_refund",
+        subjectKey: "order:ORD-1042",
+        status: "pending",
+        requestedByUserId: maya.identity.userId,
+        args: { orderId: "ORD-1042", reason: "Not needed" },
+      });
+      const audit = await db.select().from(auditLog).where(eq(auditLog.action, "action.requested"));
       expect(audit).toHaveLength(1);
       const lookup = await executeTool(maya, "lookup_order", { orderId: "ORD-1042" });
-      expect(lookup).toMatchObject({ data: { refundRequest: { status: "requested" } } });
+      expect(lookup).toMatchObject({
+        data: { refundRequest: { id: action!.id, status: "pending_approval" } },
+      });
     });
 
     it("rejects a second request for the same order", async () => {
@@ -153,12 +168,15 @@ describe("tools (Postgres)", () => {
         "conflict",
         "ok",
       ]);
-      const rows = await db.select().from(refunds).where(eq(refunds.orderId, "ORD-1043"));
+      const rows = await db
+        .select()
+        .from(pendingActions)
+        .where(eq(pendingActions.subjectKey, "order:ORD-1043"));
       expect(rows).toHaveLength(1);
       const audit = await db
         .select({ n: sql<number>`count(*)::int` })
         .from(auditLog)
-        .where(eq(auditLog.targetId, String(rows[0]!.id)));
+        .where(and(eq(auditLog.targetType, "pending_action"), eq(auditLog.targetId, String(rows[0]!.id))));
       expect(audit[0]!.n).toBe(1);
     });
   });

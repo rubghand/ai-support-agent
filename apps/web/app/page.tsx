@@ -1,8 +1,12 @@
 import { auth, signOut } from "@/auth";
 import { ChatWidget } from "@/components/chat/chat-widget";
+import Link from "next/link";
+import { connection } from "next/server";
 import { Suspense } from "react";
 
 async function SessionBar() {
+  // auth() uses crypto.getRandomValues, which Next refuses during prerender; render per request.
+  await connection();
   const session = await auth();
   if (!session?.user) return null;
   return (
@@ -16,6 +20,11 @@ async function SessionBar() {
       <span>
         {session.user.email} ({session.user.role})
       </span>
+      {session.user.role === "admin" && (
+        <Link href="/admin/approvals" className="underline">
+          Approvals
+        </Link>
+      )}
       <button type="submit" className="underline">
         Sign out
       </button>

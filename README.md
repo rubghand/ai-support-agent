@@ -32,6 +32,12 @@ npm run search -- "can I get my money back for a monthly plan?"    # retrieval o
 npm run eval:retrieval -- --all   # compare retrieval configurations on the golden set
 ```
 
+Human-in-the-loop refunds: sign in as Maya and ask _"I want a refund for order ORD-1042"_. The agent files the
+request and the chat shows it as waiting for staff approval. In another browser profile, sign in as
+`admin@ledgerly.example`, open **Approvals** (`/admin/approvals`) and approve or reject it, optionally with a note.
+The customer's chat then shows the outcome. Only an approval refunds the order. Each step (request, decision,
+execution) is written to `audit_log`.
+
 ## Results
 
 Retrieval on the golden set (35 paraphrased customer questions, document-level). Full table:

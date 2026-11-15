@@ -75,6 +75,8 @@ It binds to loopback only and is stateless (no sessions). Requests without a val
 
 ## Notes
 
-- `request_refund` is marked `_meta.risk = "high"`. It only files a request for staff review.
+- `request_refund` is marked `_meta.risk = "high"`. Calling it never refunds anything: it returns
+  `{ "status": "pending_approval", "actionId", "summary" }` and the request waits in `pending_actions` until staff
+  approve or reject it on `/admin/approvals`. This holds for every MCP client, not only the web app's agent.
 - Domain failures (not found, invalid state, conflict) are returned as tool results with `isError: true`, so the
   model can read them and recover; malformed arguments are rejected by the SDK before the tool runs.

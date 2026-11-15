@@ -1,7 +1,7 @@
-import { refunds } from "@app/db";
-import { desc, eq } from "drizzle-orm";
+import { pendingActions } from "@app/db";
+import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
-import { NOT_FOUND, findAccessibleOrder } from "./access";
+import { NOT_FOUND, findAccessibleOrder, orderSubjectKey } from "./access";
 import { defineTool, fail, ok } from "./types";
 
 export const orderIdSchema = z
@@ -9,10 +9,18 @@ export const orderIdSchema = z
   .regex(/^ORD-\d{4,}$/, "Order ids look like ORD-1042")
   .describe("Order id, e.g. ORD-1042");
 
+const REFUND_REQUEST_STATUS = {
+  pending: "pending_approval",
+  approved: "pending_approval",
+  executed: "approved",
+  rejected: "rejected",
+  failed: "failed",
+} as const;
+
 export const lookupOrder = defineTool({
   name: "lookup_order",
   description:
-    "Look up one of the signed-in customer's orders by id: item, amount, status, and any refund request on it.",
+    "Look up one of the signed-in customer's orders by id: item, amount, status, and the latest refund request on it.",
   risk: "low",
   input: z.object({ orderId: orderIdSchema }),
   output: z.object({
@@ -24,17 +32,25 @@ export const lookupOrder = defineTool({
     status: z.enum(["paid", "pending", "failed", "refunded"]),
     createdAt: z.string(),
     refundRequest: z
-      .object({ id: z.number().int(), status: z.enum(["requested", "approved", "rejected"]) })
+      .object({
+        id: z.number().int(),
+        status: z.enum(["pending_approval", "approved", "rejected", "failed"]),
+      })
       .nullable(),
   }),
   async execute({ db, identity }, { orderId }) {
     const order = await findAccessibleOrder(db, identity, orderId);
     if (!order) return fail("not_found", NOT_FOUND);
-    const [refund] = await db
-      .select({ id: refunds.id, status: refunds.status })
-      .from(refunds)
-      .where(eq(refunds.orderId, order.id))
-      .orderBy(desc(refunds.id))
+    const [request] = await db
+      .select({ id: pendingActions.id, status: pendingActions.status })
+      .from(pendingActions)
+      .where(
+        and(
+          eq(pendingActions.toolName, "request_refund"),
+          eq(pendingActions.subjectKey, orderSubjectKey(order.id)),
+        ),
+      )
+      .orderBy(desc(pendingActions.id))
       .limit(1);
     return ok({
       id: order.id,
@@ -44,7 +60,7 @@ export const lookupOrder = defineTool({
       currency: order.currency,
       status: order.status,
       createdAt: order.createdAt.toISOString(),
-      refundRequest: refund ?? null,
+      refundRequest: request ? { id: request.id, status: REFUND_REQUEST_STATUS[request.status] } : null,
     });
   },
 });

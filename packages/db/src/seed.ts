@@ -1,6 +1,6 @@
 import type { Db } from "./client";
 import { hashPassword } from "./password";
-import { auditLog, customers, orders, refunds, tickets, users } from "./schema";
+import { auditLog, customers, orders, pendingActions, refunds, tickets, users } from "./schema";
 
 type Customer = typeof customers.$inferInsert;
 type Order = typeof orders.$inferInsert;
@@ -252,6 +252,7 @@ export function generateSeedData(seed = 42): SeedData {
 export async function seedDatabase(db: Db, data: SeedData = generateSeedData()) {
   await db.transaction(async (tx) => {
     await tx.delete(auditLog);
+    await tx.delete(pendingActions);
     await tx.delete(refunds);
     await tx.delete(users);
     await tx.delete(tickets);

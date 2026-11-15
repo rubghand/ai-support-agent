@@ -11,7 +11,7 @@ import {
   retrieve,
   runAgent,
 } from "@app/core";
-import { auditLog, createDb, refunds, tickets, users } from "@app/db";
+import { auditLog, createDb, pendingActions, refunds, tickets, users } from "@app/db";
 import { createInProcessClient } from "@app/mcp-server";
 import { eq, gt, max } from "drizzle-orm";
 import { CATEGORIES, type Category, type EvalCase, loadCases } from "./cases";
@@ -81,18 +81,20 @@ async function ask(email: string, question: string): Promise<AgentAnswer> {
 }
 
 /**
- * Tool cases create tickets, refund requests and audit rows. Remember where the tables ended before
+ * Tool cases create tickets, refund requests (pending actions) and audit rows. Remember where the tables ended before
  * each case and delete anything newer after it, so cases can't affect each other (or your dev data).
  */
-const maxId = async (table: typeof refunds | typeof tickets | typeof auditLog) =>
+const maxId = async (table: typeof refunds | typeof tickets | typeof auditLog | typeof pendingActions) =>
   (await db.select({ value: max(table.id) }).from(table))[0]?.value ?? 0;
 const takeWatermark = async () => ({
   refunds: await maxId(refunds),
+  actions: await maxId(pendingActions),
   tickets: await maxId(tickets),
   audit: await maxId(auditLog),
 });
 async function undoSince(mark: Awaited<ReturnType<typeof takeWatermark>>) {
   await db.delete(refunds).where(gt(refunds.id, mark.refunds));
+  await db.delete(pendingActions).where(gt(pendingActions.id, mark.actions));
   await db.delete(tickets).where(gt(tickets.id, mark.tickets));
   await db.delete(auditLog).where(gt(auditLog.id, mark.audit));
 }

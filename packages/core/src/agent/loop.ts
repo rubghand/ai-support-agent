@@ -5,6 +5,7 @@ import { AGENT_SYSTEM_PROMPT } from "../prompts/agent";
 import { type CitedAnswer, type Source, answerSchema, finalizeAnswer, renderSource } from "../rag/answer";
 import { streamStructuredAnswer } from "../rag/answer-stream";
 import type { RetrievedChunk } from "../rag/search";
+import { type ApprovalPending, approvalPendingSchema } from "../tools/approval";
 import { type McpClientLike, loadMcpToolset } from "./mcp-toolset";
 import { describeToolCall } from "./tool-labels";
 
@@ -33,6 +34,8 @@ export interface ToolCallRecord {
   args: unknown;
   ok: boolean;
   durationMs: number;
+  /** Set when a high-risk call was filed for staff approval instead of running. */
+  pendingActionId?: number;
 }
 
 export interface AgentAnswer extends CitedAnswer {
@@ -46,8 +49,18 @@ export interface AgentAnswer extends CitedAnswer {
 export type AgentEvent =
   | { type: "tool_call"; id: string; name: string; label: string; args: unknown }
   | { type: "tool_result"; id: string; name: string; ok: boolean }
+  | { type: "approval_pending"; actionId: number; summary: string }
   | { type: "token"; text: string }
   | { type: "final"; answer: AgentAnswer };
+
+function parseApprovalPending(text: string): ApprovalPending | null {
+  try {
+    const parsed = approvalPendingSchema.safeParse(JSON.parse(text));
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
+}
 
 const searchDocsTool = tool({
   description:
@@ -67,6 +80,8 @@ const TOOL_RESULT_LIMIT = 6000;
  * the local doc search), feed the results back, repeat up to `maxSteps`; then produce the final
  * structured, cited answer. Tool-calling steps and the final answer are separate model calls, so the
  * final answer keeps the strict schema, citation resolution, and streaming from the RAG path.
+ * A high-risk call filed for staff approval pauses the loop: no further tool steps run this turn, and
+ * the answer tells the customer the request is pending. Staff decisions are posted to the chat later.
  */
 export async function* runAgent(
   { llm, mcp, search }: AgentDeps,
@@ -99,7 +114,8 @@ export async function* runAgent(
   };
 
   let steps = 0;
-  while (steps < maxSteps) {
+  let awaitingApproval = false;
+  while (steps < maxSteps && !awaitingApproval) {
     const step = await generateText({
       model: llm.model(tier),
       system: AGENT_SYSTEM_PROMPT,
@@ -144,14 +160,20 @@ export async function* runAgent(
         if (signal?.aborted) throw error;
         text = `Tool failed: ${error instanceof Error ? error.message : "unknown error"}`;
       }
+      const pending = ok && toolset.highRisk.has(call.toolName) ? parseApprovalPending(text) : null;
       records.push({
         id: call.toolCallId,
         name: call.toolName,
         args,
         ok,
         durationMs: Math.round(performance.now() - callStarted),
+        ...(pending && { pendingActionId: pending.actionId }),
       });
       yield { type: "tool_result", id: call.toolCallId, name: call.toolName, ok };
+      if (pending) {
+        awaitingApproval = true;
+        yield { type: "approval_pending", actionId: pending.actionId, summary: pending.summary };
+      }
       results.push({
         type: "tool-result" as const,
         toolCallId: call.toolCallId,

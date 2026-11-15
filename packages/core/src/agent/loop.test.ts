@@ -92,6 +92,13 @@ async function collect(gen: AsyncGenerator<AgentEvent>) {
   return { events, answer: final.answer };
 }
 
+const pendingText = JSON.stringify({
+  status: "pending_approval",
+  actionId: 7,
+  summary: "Refund $29.00 for order ORD-1042",
+  message: "Filed for staff review.",
+});
+
 const reply = (extra: object = {}) => ({
   answer: "Done.",
   citations: [],
@@ -121,9 +128,53 @@ describe("runAgent", () => {
       [{ tool: "request_refund", input: { orderId: "ORD-1042" } }],
       reply({ needsHuman: false }),
     );
-    const { mcp } = fakeMcp({ request_refund: { ok: true, text: '{"status":"requested"}' } });
+    const { mcp } = fakeMcp({ request_refund: { ok: true, text: pendingText } });
     const { answer } = await collect(runAgent({ llm, mcp, search: async () => [] }, "refund ORD-1042"));
     expect(answer.needsHuman).toBe(true);
+  });
+
+  it("pauses after a high-risk call is filed for approval and reports the pending action", async () => {
+    const { llm, generateCalls } = scriptedLlm(
+      [
+        { tool: "request_refund", input: { orderId: "ORD-1042", reason: "Not needed" } },
+        { tool: "lookup_order", input: { orderId: "ORD-1042" } },
+      ],
+      reply({ answer: "Your refund request is pending staff review." }),
+    );
+    const { mcp, callTool } = fakeMcp({
+      request_refund: { ok: true, text: pendingText },
+      lookup_order: { ok: true, text: "{}" },
+    });
+    const { events, answer } = await collect(
+      runAgent({ llm, mcp, search: async () => [] }, "refund ORD-1042"),
+    );
+
+    expect(events.map((e) => e.type)).toEqual([
+      "tool_call",
+      "tool_result",
+      "approval_pending",
+      "token",
+      "final",
+    ]);
+    expect(events[2]).toEqual({
+      type: "approval_pending",
+      actionId: 7,
+      summary: "Refund $29.00 for order ORD-1042",
+    });
+    // The scripted second tool step never runs: the loop stopped asking the model for tools.
+    expect(callTool).toHaveBeenCalledOnce();
+    expect(generateCalls()).toBe(1);
+    expect(answer.toolCalls).toMatchObject([{ name: "request_refund", ok: true, pendingActionId: 7 }]);
+  });
+
+  it("does not treat a failed high-risk call as pending", async () => {
+    const { llm } = scriptedLlm([{ tool: "request_refund", input: { orderId: "ORD-1044" } }], reply());
+    const { mcp } = fakeMcp({ request_refund: { ok: false, text: '{"code":"invalid_state"}' } });
+    const { events, answer } = await collect(
+      runAgent({ llm, mcp, search: async () => [] }, "refund ORD-1044"),
+    );
+    expect(events.some((e) => e.type === "approval_pending")).toBe(false);
+    expect(answer.toolCalls[0]?.pendingActionId).toBeUndefined();
   });
 
   it("labels doc sources across search_docs calls and resolves citations to them", async () => {
