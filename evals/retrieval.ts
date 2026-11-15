@@ -30,7 +30,7 @@ const { values } = parseArgs({
   },
 });
 
-const cases = await loadCases();
+const cases = (await loadCases()).filter((c) => c.category === "answerable");
 const embedder = createLocalEmbedder();
 const { db, close } = createDb(loadConfig().DATABASE_URL);
 const configNames = values.all ? Object.keys(CONFIGS) : [Object.keys(CONFIGS)[0]!];

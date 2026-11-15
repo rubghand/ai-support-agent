@@ -4,6 +4,8 @@ export { SUPPORT_SYSTEM_PROMPT } from "./prompts/system";
 export {
   answerQuestion,
   answerSchema,
+  buildUserPrompt,
+  labelSources,
   generateCitedAnswer,
   type AnswerDeps,
   type CitedAnswer,
