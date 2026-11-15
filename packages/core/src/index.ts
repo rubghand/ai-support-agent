@@ -45,3 +45,18 @@ export {
   type BucketConfig,
   type RateLimitResult,
 } from "./ratelimit";
+export {
+  createTicket,
+  escalateToHuman,
+  executeTool,
+  getTool,
+  lookupOrder,
+  requestRefund,
+  tools,
+  type Identity,
+  type ToolContext,
+  type ToolDefinition,
+  type ToolErrorCode,
+  type ToolName,
+  type ToolResult,
+} from "./tools";

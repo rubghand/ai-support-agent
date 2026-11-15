@@ -1,6 +1,6 @@
 import type { Db } from "./client";
 import { hashPassword } from "./password";
-import { customers, orders, tickets, users } from "./schema";
+import { auditLog, customers, orders, refunds, tickets, users } from "./schema";
 
 type Customer = typeof customers.$inferInsert;
 type Order = typeof orders.$inferInsert;
@@ -251,6 +251,8 @@ export function generateSeedData(seed = 42): SeedData {
 /** Replaces all product data (customers, orders, tickets, demo users) with the deterministic seed. */
 export async function seedDatabase(db: Db, data: SeedData = generateSeedData()) {
   await db.transaction(async (tx) => {
+    await tx.delete(auditLog);
+    await tx.delete(refunds);
     await tx.delete(users);
     await tx.delete(tickets);
     await tx.delete(orders);

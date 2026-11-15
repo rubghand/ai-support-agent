@@ -11,6 +11,7 @@ import {
   serial,
   text,
   timestamp,
+  uniqueIndex,
   vector,
 } from "drizzle-orm/pg-core";
 
@@ -160,3 +161,49 @@ export const rateLimits = pgTable("rate_limits", {
   tokens: doublePrecision("tokens").notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
 });
+
+// ---------- Actions: refunds and audit trail ----------
+
+export const refundStatusEnum = pgEnum("refund_status", ["requested", "approved", "rejected"]);
+
+/** A refund *request*. Nothing is paid out until a human approves it (Phase 12). */
+export const refunds = pgTable(
+  "refunds",
+  {
+    id: serial("id").primaryKey(),
+    orderId: text("order_id")
+      .notNull()
+      .references(() => orders.id),
+    customerId: text("customer_id")
+      .notNull()
+      .references(() => customers.id),
+    amountCents: integer("amount_cents").notNull(),
+    reason: text("reason").notNull(),
+    status: refundStatusEnum("status").notNull().default("requested"),
+    requestedByUserId: integer("requested_by_user_id").references(() => users.id, { onDelete: "set null" }),
+    decidedByUserId: integer("decided_by_user_id").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+  },
+  (t) => [
+    // At most one live (requested or approved) refund per order, enforced by the database.
+    uniqueIndex("refunds_one_live_per_order_idx")
+      .on(t.orderId)
+      .where(sql`${t.status} in ('requested', 'approved')`),
+  ],
+);
+
+/** Append-only record of who did what; written in the same transaction as the change it describes. */
+export const auditLog = pgTable(
+  "audit_log",
+  {
+    id: serial("id").primaryKey(),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+    actorUserId: integer("actor_user_id"),
+    action: text("action").notNull(),
+    targetType: text("target_type").notNull(),
+    targetId: text("target_id").notNull(),
+    details: jsonb("details").$type<Record<string, unknown>>().notNull().default({}),
+  },
+  (t) => [index("audit_log_target_idx").on(t.targetType, t.targetId)],
+);
