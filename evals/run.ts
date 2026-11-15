@@ -1,13 +1,25 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { parseArgs } from "node:util";
-import { type ModelTier, answerQuestion, createLlm, createLocalEmbedder, loadConfig } from "@app/core";
-import { createDb } from "@app/db";
+import {
+  type AgentAnswer,
+  type Identity,
+  type ModelTier,
+  createLlm,
+  createLocalEmbedder,
+  loadConfig,
+  retrieve,
+  runAgent,
+} from "@app/core";
+import { auditLog, createDb, refunds, tickets, users } from "@app/db";
+import { createInProcessClient } from "@app/mcp-server";
+import { eq, gt, max } from "drizzle-orm";
 import { CATEGORIES, type Category, type EvalCase, loadCases } from "./cases";
 import { type CaseResult, renderTable } from "./report";
 import {
   behaviorMatches,
   checkContent,
+  checkTools,
   citationPrecision,
   observedBehaviors,
   projectedCostUsd,
@@ -45,7 +57,48 @@ const embedder = createLocalEmbedder();
 const { db, close } = createDb(config.DATABASE_URL);
 const results: CaseResult[] = [];
 
+async function identityFor(email: string): Promise<Identity> {
+  const [user] = await db.select().from(users).where(eq(users.email, email));
+  if (!user) throw new Error(`Unknown eval user ${email}; run npm run db:seed`);
+  return { userId: user.id, role: user.role, customerId: user.customerId };
+}
+
+/** Runs the agent as `email` and returns its final answer. */
+async function ask(email: string, question: string): Promise<AgentAnswer> {
+  const mcp = await createInProcessClient({ db, identity: await identityFor(email) });
+  try {
+    for await (const event of runAgent(
+      { llm, mcp: mcp.client, search: (query) => retrieve(db, embedder, query, { k: 5 }) },
+      question,
+      { tier },
+    )) {
+      if (event.type === "final") return event.answer;
+    }
+    throw new Error("agent produced no answer");
+  } finally {
+    await mcp.close();
+  }
+}
+
+/**
+ * Tool cases create tickets, refund requests and audit rows. Remember where the tables ended before
+ * each case and delete anything newer after it, so cases can't affect each other (or your dev data).
+ */
+const maxId = async (table: typeof refunds | typeof tickets | typeof auditLog) =>
+  (await db.select({ value: max(table.id) }).from(table))[0]?.value ?? 0;
+const takeWatermark = async () => ({
+  refunds: await maxId(refunds),
+  tickets: await maxId(tickets),
+  audit: await maxId(auditLog),
+});
+async function undoSince(mark: Awaited<ReturnType<typeof takeWatermark>>) {
+  await db.delete(refunds).where(gt(refunds.id, mark.refunds));
+  await db.delete(tickets).where(gt(tickets.id, mark.tickets));
+  await db.delete(auditLog).where(gt(auditLog.id, mark.audit));
+}
+
 for (const c of cases) {
+  const mark = await takeWatermark();
   const base = {
     id: c.id,
     category: c.category,
@@ -53,12 +106,14 @@ for (const c of cases) {
     hasExpectedDocs: c.expectedDocIds.length > 0,
   };
   try {
-    const r = await answerQuestion({ db, embedder, llm }, c.question, { tier, k: 5 });
+    const r = await ask(c.user, c.question);
     const rank = firstRelevantRank(rankedDocuments(r.retrieved.map((ch) => ch.documentId)), c.expectedDocIds);
     const content = checkContent(r.answer, c.mustContain, c.mustNotContain);
     let groundedOk: boolean | null = null;
     let groundedReason: string | undefined;
-    if (!values["no-judge"] && r.grounded) {
+    const tools = checkTools(r.toolCalls, c.expectedTools, c.forbiddenTools);
+    // The judge compares the answer to doc sources; answers grounded only on tool results have none.
+    if (!values["no-judge"] && r.citations.length > 0) {
       const verdict = await judgeGroundedness(llm, c.question, r.retrieved, r.answer);
       groundedOk = verdict.supported;
       groundedReason = verdict.reason;
@@ -69,6 +124,9 @@ for (const c of cases) {
       observed: observedBehaviors(r),
       behaviorOk: behaviorMatches(r, c.expectedBehavior),
       contentOk: content.ok,
+      toolsOk: tools.ok,
+      toolCalls: r.toolCalls.map((t) => ({ name: t.name, args: t.args, ok: t.ok })),
+      toolIssues: tools.ok ? undefined : { missing: tools.missing, unexpected: tools.unexpected },
       contentIssues: content.ok ? undefined : { missing: content.missing, forbidden: content.forbidden },
       retrievalRank: rank,
       citationPrecision: citationPrecision(
@@ -77,7 +135,7 @@ for (const c of cases) {
       ),
       groundedOk,
       groundedReason,
-      latencyMs: r.retrievalMs + r.latencyMs,
+      latencyMs: r.latencyMs,
       inputTokens: r.usage.inputTokens,
       outputTokens: r.usage.outputTokens,
       costUsd: projectedCostUsd(tier, r.usage.inputTokens, r.usage.outputTokens),
@@ -88,6 +146,7 @@ for (const c of cases) {
       error: error instanceof Error ? error.message : String(error),
       behaviorOk: false,
       contentOk: false,
+      toolsOk: false,
       retrievalRank: null,
       citationPrecision: null,
       groundedOk: null,
@@ -97,10 +156,11 @@ for (const c of cases) {
       costUsd: 0,
     });
   }
+  await undoSince(mark);
   const last = results.at(-1)!;
   const flag = last.error
     ? "ERR "
-    : last.behaviorOk && last.contentOk && last.groundedOk !== false
+    : last.behaviorOk && last.contentOk && last.toolsOk && last.groundedOk !== false
       ? "ok  "
       : "FAIL";
   console.log(`${flag} ${last.id} (${last.category}) ${last.error ?? last.observed?.join("+")}`);
@@ -118,7 +178,9 @@ await writeFile(
 );
 await writeFile(path.join(dir, `${stamp}.md`), `${header}\n\n${table}\n`);
 
-const failures = results.filter((r) => r.error || !r.behaviorOk || !r.contentOk || r.groundedOk === false);
+const failures = results.filter(
+  (r) => r.error || !r.behaviorOk || !r.contentOk || !r.toolsOk || r.groundedOk === false,
+);
 console.log(`\n${header}\n\n${table}`);
 if (failures.length > 0) {
   console.log("\nFailures:");
@@ -128,6 +190,10 @@ if (failures.length > 0) {
       [
         !f.behaviorOk && `behavior=${f.observed?.join("+")}`,
         f.contentIssues?.missing.length ? `missing ${JSON.stringify(f.contentIssues.missing)}` : "",
+        f.toolIssues?.missing.length ? `missing tools ${JSON.stringify(f.toolIssues.missing)}` : "",
+        f.toolIssues?.unexpected.length
+          ? `forbidden tools called ${JSON.stringify(f.toolIssues.unexpected)}`
+          : "",
         f.contentIssues?.forbidden.length ? `forbidden ${JSON.stringify(f.contentIssues.forbidden)}` : "",
         f.groundedOk === false && `ungrounded: ${f.groundedReason}`,
       ]

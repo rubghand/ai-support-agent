@@ -50,3 +50,27 @@ export function projectedCostUsd(tier: "small" | "large", inputTokens: number, o
 
 export const mean = (values: number[]): number | null =>
   values.length === 0 ? null : values.reduce((a, b) => a + b, 0) / values.length;
+
+export interface ExpectedTool {
+  name: string;
+  args?: Record<string, unknown>;
+}
+
+/** True when every key in `expected` is present in `actual` with an equal value (extra keys are fine). */
+function isSubset(expected: Record<string, unknown>, actual: unknown): boolean {
+  if (typeof actual !== "object" || actual === null) return false;
+  const a = actual as Record<string, unknown>;
+  return Object.entries(expected).every(([key, value]) => JSON.stringify(a[key]) === JSON.stringify(value));
+}
+
+export function checkTools(
+  calls: Array<{ name: string; args: unknown }>,
+  expected: ExpectedTool[] = [],
+  forbidden: string[] = [],
+) {
+  const missing = expected.filter(
+    (e) => !calls.some((c) => c.name === e.name && (!e.args || isSubset(e.args, c.args))),
+  );
+  const unexpected = forbidden.filter((name) => calls.some((c) => c.name === name));
+  return { ok: missing.length === 0 && unexpected.length === 0, missing, unexpected };
+}

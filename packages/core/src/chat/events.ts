@@ -5,6 +5,8 @@ export type ChatTier = "small" | "large";
 /** Wire format of `/api/chat`. Client-safe: no server imports besides types. */
 export type ChatEvent =
   | { type: "meta"; conversationId: string }
+  /** The agent started or finished a tool; `label` is customer-facing ("Looking up order ORD-1042…"). */
+  | { type: "tool"; id: string; name: string; label: string; status: "running" | "done" | "failed" }
   | { type: "token"; text: string }
   | {
       type: "citations";

@@ -4,6 +4,7 @@ import { type CaseResult, summarize } from "../report";
 import {
   behaviorMatches,
   checkContent,
+  checkTools,
   citationPrecision,
   observedBehaviors,
   projectedCostUsd,
@@ -46,6 +47,28 @@ describe("checkContent", () => {
   });
 });
 
+describe("checkTools", () => {
+  const calls = [
+    { name: "lookup_order", args: { orderId: "ORD-1042", extra: 1 } },
+    { name: "search_docs", args: { query: "x" } },
+  ];
+  it("matches expected tools by name and argument subset", () => {
+    expect(checkTools(calls, [{ name: "lookup_order", args: { orderId: "ORD-1042" } }]).ok).toBe(true);
+    expect(checkTools(calls, [{ name: "search_docs" }]).ok).toBe(true);
+  });
+  it("reports missing tools, wrong arguments and forbidden calls", () => {
+    expect(checkTools(calls, [{ name: "lookup_order", args: { orderId: "ORD-1" } }]).missing).toHaveLength(1);
+    expect(checkTools(calls, [{ name: "create_ticket" }]).ok).toBe(false);
+    expect(checkTools(calls, [], ["lookup_order"])).toMatchObject({
+      ok: false,
+      unexpected: ["lookup_order"],
+    });
+  });
+  it("passes when nothing is expected or forbidden", () => {
+    expect(checkTools([], [], []).ok).toBe(true);
+  });
+});
+
 describe("projectedCostUsd", () => {
   it("prices tokens per million", () => {
     expect(projectedCostUsd("large", 1_000_000, 1_000_000)).toBe(18);
@@ -60,6 +83,7 @@ describe("summarize", () => {
     question: "q",
     behaviorOk: true,
     contentOk: true,
+    toolsOk: true,
     retrievalRank: 1,
     hasExpectedDocs: true,
     citationPrecision: 1,

@@ -2,7 +2,14 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 
-export const CATEGORIES = ["answerable", "multi-doc", "unanswerable", "off-topic", "injection"] as const;
+export const CATEGORIES = [
+  "answerable",
+  "multi-doc",
+  "unanswerable",
+  "off-topic",
+  "injection",
+  "tools",
+] as const;
 export type Category = (typeof CATEGORIES)[number];
 
 export const behaviorSchema = z.enum(["answer", "refuse", "escalate"]);
@@ -16,6 +23,14 @@ export const evalCaseSchema = z.object({
   expectedDocIds: z.array(z.string()).default([]),
   /** One accepted behaviour, or several when more than one is reasonable. */
   expectedBehavior: z.union([behaviorSchema, z.array(behaviorSchema).min(1)]).default("answer"),
+  /** Seeded user the agent acts as; the default customer owns ORD-1042 and ORD-1045. */
+  user: z.string().default("maya@brightpixelstudio.example"),
+  /** Tools that must be called; `args` need only be a subset of the actual arguments. */
+  expectedTools: z
+    .array(z.object({ name: z.string(), args: z.record(z.string(), z.unknown()).optional() }))
+    .default([]),
+  /** Tools that must not be called (e.g. no order lookup for a how-to question). */
+  forbiddenTools: z.array(z.string()).default([]),
   /** Case-insensitive substrings that must all appear in the answer. */
   mustContain: z.array(z.string()).optional(),
   /** Case-insensitive substrings that must not appear (e.g. text from an injected instruction). */

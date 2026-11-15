@@ -5,13 +5,14 @@ import {
   encodeSse,
   ensureConversation,
   retrieve,
+  runAgent,
   saveAssistantMessage,
   saveUserMessage,
-  streamCitedAnswer,
 } from "@app/core";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { getServices } from "@/lib/services";
+import { createInProcessClient } from "@app/mcp-server";
 
 const bodySchema = z.object({
   message: z.string().trim().min(1).max(2000),
@@ -55,30 +56,57 @@ export async function POST(request: Request) {
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       const send = (event: ChatEvent) => controller.enqueue(encoder.encode(encodeSse(event)));
+      // One MCP client per request, bound to the verified session's identity.
+      const mcp = await createInProcessClient({ db, identity: session.user });
       try {
         send({ type: "meta", conversationId });
-        const retrieved = await retrieve(db, embedder, message, { k: 5 });
-        for await (const event of streamCitedAnswer(llm, message, retrieved, { tier }, request.signal)) {
-          if (event.type === "token") {
-            send(event);
-            continue;
+        const events = runAgent(
+          { llm, mcp: mcp.client, search: (query) => retrieve(db, embedder, query, { k: 5 }) },
+          message,
+          { tier, signal: request.signal },
+        );
+        for await (const event of events) {
+          switch (event.type) {
+            case "tool_call":
+              send({ type: "tool", id: event.id, name: event.name, label: event.label, status: "running" });
+              break;
+            case "tool_result":
+              send({
+                type: "tool",
+                id: event.id,
+                name: event.name,
+                label: "",
+                status: event.ok ? "done" : "failed",
+              });
+              break;
+            case "token":
+              send(event);
+              break;
+            case "final": {
+              const { answer } = event;
+              await saveAssistantMessage(db, conversationId, answer);
+              send({ type: "citations", citations: answer.citations, answer: answer.answer });
+              send({
+                type: "done",
+                confidence: answer.confidence,
+                needsHuman: answer.needsHuman,
+                grounded: answer.grounded,
+                model: answer.model,
+                latencyMs: answer.latencyMs,
+              });
+              break;
+            }
+            default: {
+              const unhandled: never = event;
+              throw new Error(`Unhandled agent event: ${JSON.stringify(unhandled)}`);
+            }
           }
-          const { answer } = event;
-          await saveAssistantMessage(db, conversationId, answer);
-          send({ type: "citations", citations: answer.citations, answer: answer.answer });
-          send({
-            type: "done",
-            confidence: answer.confidence,
-            needsHuman: answer.needsHuman,
-            grounded: answer.grounded,
-            model: answer.model,
-            latencyMs: answer.latencyMs,
-          });
         }
       } catch (error) {
         console.error("chat failed", error);
         send({ type: "error", message: "Something went wrong. Please try again." });
       } finally {
+        await mcp.close();
         controller.close();
       }
     },

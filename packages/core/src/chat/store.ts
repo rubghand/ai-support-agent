@@ -20,9 +20,26 @@ export async function saveUserMessage(db: Db, conversationId: string, content: s
   await db.insert(messages).values({ conversationId, role: "user", content });
 }
 
-export async function saveAssistantMessage(db: Db, conversationId: string, answer: CitedAnswer) {
-  const { answer: content, ...metadata } = answer;
-  await db.insert(messages).values({ conversationId, role: "assistant", content, metadata });
+export async function saveAssistantMessage(
+  db: Db,
+  conversationId: string,
+  answer: CitedAnswer & { toolCalls?: unknown[]; steps?: number },
+) {
+  // Retrieved chunk text is large and already in the knowledge base; keep citations and the tool trail.
+  const metadata = {
+    citations: answer.citations,
+    confidence: answer.confidence,
+    needsHuman: answer.needsHuman,
+    grounded: answer.grounded,
+    invalidCitations: answer.invalidCitations,
+    model: answer.model,
+    usage: answer.usage,
+    latencyMs: answer.latencyMs,
+    attempts: answer.attempts,
+    toolCalls: answer.toolCalls ?? [],
+    steps: answer.steps ?? 0,
+  };
+  await db.insert(messages).values({ conversationId, role: "assistant", content: answer.answer, metadata });
 }
 
 export async function listMessages(db: Db, conversationId: string) {

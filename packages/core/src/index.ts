@@ -60,3 +60,15 @@ export {
   type ToolName,
   type ToolResult,
 } from "./tools";
+export {
+  SEARCH_DOCS,
+  runAgent,
+  type AgentAnswer,
+  type AgentDeps,
+  type AgentEvent,
+  type AgentOptions,
+  type ToolCallRecord,
+} from "./agent/loop";
+export { loadMcpToolset, type McpClientLike, type McpToolset } from "./agent/mcp-toolset";
+export { describeToolCall } from "./agent/tool-labels";
+export { AGENT_SYSTEM_PROMPT } from "./prompts/agent";

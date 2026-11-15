@@ -47,12 +47,14 @@ export function labelSources(chunks: RetrievedChunk[]): Source[] {
 
 const escapeSource = (text: string) => text.replaceAll("</source>", "</ source>");
 
+/** One source block, with its date so the model can resolve conflicts. */
+export function renderSource(s: Source): string {
+  return `<source id="${s.label}" title="${s.title}" section="${s.headingPath}" updated="${s.updatedOn.toISOString().slice(0, 10)}">\n${escapeSource(s.content)}\n</source>`;
+}
+
 /** Dynamic part of the prompt: retrieved sources (with dates for conflict handling) and the question. */
 export function buildUserPrompt(question: string, sources: Source[]): string {
-  const blocks = sources.map(
-    (s) =>
-      `<source id="${s.label}" title="${s.title}" section="${s.headingPath}" updated="${s.updatedOn.toISOString().slice(0, 10)}">\n${escapeSource(s.content)}\n</source>`,
-  );
+  const blocks = sources.map(renderSource);
   return `<sources>\n${blocks.join("\n\n")}\n</sources>\n\n<question>\n${question}\n</question>`;
 }
 
@@ -139,9 +141,11 @@ export function finalizeAnswer(
   output: ModelAnswer,
   sources: Source[],
   meta: Pick<CitedAnswer, "model" | "usage" | "latencyMs" | "attempts">,
+  { groundedByTools = false }: { groundedByTools?: boolean } = {},
 ): CitedAnswer {
   const resolved = resolveCitations(output, sources);
-  const grounded = resolved.citations.length > 0;
+  // Facts fetched from a tool (e.g. an order's status) ground an answer even without a doc citation.
+  const grounded = resolved.citations.length > 0 || groundedByTools;
   return {
     ...resolved,
     // An answer with no valid citation can't be trusted, whatever the model claimed.
