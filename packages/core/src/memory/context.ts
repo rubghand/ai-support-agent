@@ -1,4 +1,5 @@
 import type { ModelMessage } from "ai";
+import { wrapUntrusted } from "../guard/untrusted";
 import { MESSAGE_OVERHEAD_TOKENS, countTokens } from "./tokens";
 
 export interface HistoryMessage {
@@ -76,7 +77,7 @@ export function toModelMessages(summary: string | null, recent: HistoryMessage[]
   if (summary) {
     messages.push({
       role: "user",
-      content: `${SUMMARY_HEADER}\n<conversation_summary>\n${summary}\n</conversation_summary>`,
+      content: `${SUMMARY_HEADER}\n${wrapUntrusted("conversation_summary", summary)}`,
     });
   }
   for (const m of recent) {

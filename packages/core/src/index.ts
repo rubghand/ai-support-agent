@@ -2,6 +2,8 @@ export { DEFAULT_MODELS, LLM_PROVIDERS, loadConfig, type AppConfig, type LlmProv
 export { createLlm, type Llm, type ModelTier } from "./llm/provider";
 export { SUPPORT_SYSTEM_PROMPT } from "./prompts/system";
 export {
+  ANSWER_KINDS,
+  PROTECTED_PROMPTS,
   answerQuestion,
   answerSchema,
   buildUserPrompt,
@@ -99,3 +101,15 @@ export {
 export { loadConversationHistory, type ConversationHistory, type LoadHistoryOptions } from "./memory/history";
 export { summarizeConversation, withKeyFacts } from "./memory/summarize";
 export { countTokens, truncateToTokens } from "./memory/tokens";
+export {
+  INPUT_CATEGORIES,
+  checkInput,
+  classifyInput,
+  detectInjection,
+  inputRefusal,
+  type InputCategory,
+  type InputVerdict,
+} from "./guard/input";
+export { checkOutput, type OutputCheck, type OutputViolation } from "./guard/output";
+export { redactPii, type PiiKind, type Redaction } from "./guard/pii";
+export { wrapUntrusted } from "./guard/untrusted";

@@ -1,10 +1,12 @@
 import {
   CHAT_LIMITS,
   type ChatEvent,
+  checkInput,
   consume,
   encodeSse,
   ensureConversation,
   loadConversationHistory,
+  redactPii,
   retrieve,
   runAgent,
   saveAssistantMessage,
@@ -48,10 +50,17 @@ export async function POST(request: Request) {
   if (!parsed.success) {
     return Response.json({ error: z.prettifyError(parsed.error) }, { status: 400 });
   }
-  const { message, conversationId: requestedId, tier } = parsed.data;
+  const { conversationId: requestedId, tier } = parsed.data;
   const conversationId = await ensureConversation(db, userId, requestedId);
   if (!conversationId) return Response.json({ error: "Conversation not found" }, { status: 404 });
-  const userMessageId = await saveUserMessage(db, conversationId, message);
+  // Card numbers, emails and phone numbers are never needed by the agent: drop them before storage and the model.
+  const { text: message, found: redacted } = redactPii(parsed.data.message);
+  const userMessageId = await saveUserMessage(
+    db,
+    conversationId,
+    message,
+    redacted.length > 0 ? { redacted } : undefined,
+  );
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
@@ -65,8 +74,17 @@ export async function POST(request: Request) {
           beforeId: userMessageId,
           signal: request.signal,
         });
+        const context = history.recent
+          .slice(-2)
+          .map((m) => `${m.role === "user" ? "Customer" : "Agent"}: ${m.content}`)
+          .join("\n");
         const events = runAgent(
-          { llm, mcp: mcp.client, search: (query) => retrieve(db, embedder, query, { k: 5 }) },
+          {
+            llm,
+            mcp: mcp.client,
+            search: (query) => retrieve(db, embedder, query, { k: 5 }),
+            inputGuard: (question) => checkInput(llm, question, { context, signal: request.signal }),
+          },
           message,
           { tier, history: history.messages, signal: request.signal },
         );

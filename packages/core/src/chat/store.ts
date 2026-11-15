@@ -16,11 +16,16 @@ export async function ensureConversation(db: Db, userId: number, id?: string): P
   return newId;
 }
 
-/** Returns the new message id. */
-export async function saveUserMessage(db: Db, conversationId: string, content: string): Promise<number> {
+/** Returns the new message id. `content` should already be PII-redacted (see `redactPii`). */
+export async function saveUserMessage(
+  db: Db,
+  conversationId: string,
+  content: string,
+  metadata?: Record<string, unknown>,
+): Promise<number> {
   const [row] = await db
     .insert(messages)
-    .values({ conversationId, role: "user", content })
+    .values({ conversationId, role: "user", content, metadata })
     .returning({ id: messages.id });
   return row!.id;
 }
@@ -32,6 +37,8 @@ export async function saveAssistantMessage(
 ) {
   // Retrieved chunk text is large and already in the knowledge base; keep citations and the tool trail.
   const metadata = {
+    kind: answer.kind,
+    guardFlags: answer.guardFlags,
     citations: answer.citations,
     confidence: answer.confidence,
     needsHuman: answer.needsHuman,

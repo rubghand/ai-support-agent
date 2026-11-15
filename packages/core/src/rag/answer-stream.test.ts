@@ -52,6 +52,7 @@ describe("streamCitedAnswer", () => {
   it("streams answer text incrementally, then a final resolved answer", async () => {
     const json = JSON.stringify({
       answer: "Yes, there is a 14-day trial. [S1] [S9]",
+      kind: "answer",
       citations: ["S1"],
       confidence: "high",
       needsHuman: false,

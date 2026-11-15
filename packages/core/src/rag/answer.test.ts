@@ -60,6 +60,7 @@ describe("resolveCitations", () => {
     const resolved = resolveCitations(
       {
         answer: "No [S1]. Trial exists [S2]. Made up [S9].",
+        kind: "answer",
         citations: ["S1"],
         confidence: "high",
         needsHuman: false,
@@ -77,6 +78,7 @@ describe("generateCitedAnswer", () => {
     const { llm } = mockLlm(
       reply({
         answer: "Monthly plans aren't refundable [S1].",
+        kind: "answer",
         citations: ["S1"],
         confidence: "high",
         needsHuman: false,
@@ -96,7 +98,13 @@ describe("generateCitedAnswer", () => {
   it("retries once when the output fails schema validation", async () => {
     const { llm, calls } = mockLlm(
       "Sure! Monthly plans are not refundable.",
-      reply({ answer: "Not refundable [S1].", citations: ["S1"], confidence: "high", needsHuman: false }),
+      reply({
+        answer: "Not refundable [S1].",
+        kind: "answer",
+        citations: ["S1"],
+        confidence: "high",
+        needsHuman: false,
+      }),
     );
     const result = await generateCitedAnswer(llm, "refund?", chunks);
     expect(calls()).toBe(2);
@@ -106,8 +114,8 @@ describe("generateCitedAnswer", () => {
 
   it("rejects an empty answer and retries", async () => {
     const { llm, calls } = mockLlm(
-      reply({ answer: " ", citations: [], confidence: "low", needsHuman: true }),
-      reply({ answer: "I don't know.", citations: [], confidence: "low", needsHuman: true }),
+      reply({ answer: " ", kind: "refuse", citations: [], confidence: "low", needsHuman: true }),
+      reply({ answer: "I don't know.", kind: "refuse", citations: [], confidence: "low", needsHuman: true }),
     );
     const result = await generateCitedAnswer(llm, "refund?", chunks);
     expect(calls()).toBe(2);
@@ -116,7 +124,13 @@ describe("generateCitedAnswer", () => {
 
   it("downgrades confidence when nothing valid is cited", async () => {
     const { llm } = mockLlm(
-      reply({ answer: "I think so [S7].", citations: ["S7"], confidence: "high", needsHuman: false }),
+      reply({
+        answer: "I think so [S7].",
+        kind: "clarify",
+        citations: ["S7"],
+        confidence: "high",
+        needsHuman: false,
+      }),
     );
     const result = await generateCitedAnswer(llm, "refund?", chunks);
     expect(result).toMatchObject({ grounded: false, confidence: "low", invalidCitations: ["S7"] });

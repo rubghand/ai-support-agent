@@ -8,6 +8,8 @@ export interface CaseResult {
   error?: string;
   answer?: string;
   observed?: string[];
+  /** Guardrails that fired (`input:injection`, `output:uncited`, ...). */
+  guardFlags?: string[];
   behaviorOk: boolean;
   contentOk: boolean;
   toolsOk: boolean;

@@ -25,6 +25,7 @@ export interface StructuredStreamRequest {
   /** Used when the streamed output doesn't validate; should be the blocking path with its repair retry. */
   fallback: () => Promise<CitedAnswer>;
   groundedByTools?: boolean;
+  approvalConfirmed?: boolean;
   /** Tokens already spent on earlier steps, added to this call's usage. */
   priorUsage?: { inputTokens: number; outputTokens: number };
   signal?: AbortSignal;
@@ -87,7 +88,7 @@ export async function* streamStructuredAnswer(
         latencyMs: Math.round(performance.now() - started),
         attempts: 1,
       },
-      { groundedByTools: req.groundedByTools },
+      { groundedByTools: req.groundedByTools, approvalConfirmed: req.approvalConfirmed },
     ),
   };
 }

@@ -5,6 +5,8 @@ import { AGENT_SYSTEM_PROMPT } from "../prompts/agent";
 import { type CitedAnswer, type Source, answerSchema, finalizeAnswer, renderSource } from "../rag/answer";
 import { streamStructuredAnswer } from "../rag/answer-stream";
 import type { RetrievedChunk } from "../rag/search";
+import { type InputVerdict, inputRefusal } from "../guard/input";
+import { wrapUntrusted } from "../guard/untrusted";
 import { type ApprovalPending, approvalPendingSchema } from "../tools/approval";
 import { type McpClientLike, loadMcpToolset } from "./mcp-toolset";
 import { describeToolCall } from "./tool-labels";
@@ -17,6 +19,8 @@ export interface AgentDeps {
   mcp: McpClientLike;
   /** Retrieval over the knowledge base; the agent decides when to call it. */
   search: (query: string) => Promise<RetrievedChunk[]>;
+  /** Screens the question before any model or tool runs (see `checkInput`); no screening when omitted. */
+  inputGuard?: (question: string) => Promise<InputVerdict>;
 }
 
 export interface AgentOptions {
@@ -76,6 +80,18 @@ const searchDocsTool = tool({
 
 const searchInput = z.object({ query: z.string().trim().min(1).max(300) });
 const TOOL_RESULT_LIMIT = 6000;
+const APPROVED_REFUND = /"status":\s*"(approved|refunded)"/;
+
+/** Tool output goes back to the model as delimited data, like doc sources. */
+const toolResult = (toolCallId: string, toolName: string, text: string) => ({
+  type: "tool-result" as const,
+  toolCallId,
+  toolName,
+  output: {
+    type: "text" as const,
+    value: wrapUntrusted("tool_result", text.slice(0, TOOL_RESULT_LIMIT), { name: toolName }),
+  },
+});
 
 /**
  * The agent loop, written out explicitly: ask the model, run the tools it requests (through MCP, or
@@ -86,11 +102,39 @@ const TOOL_RESULT_LIMIT = 6000;
  * the answer tells the customer the request is pending. Staff decisions are posted to the chat later.
  */
 export async function* runAgent(
-  { llm, mcp, search }: AgentDeps,
+  { llm, mcp, search, inputGuard }: AgentDeps,
   question: string,
   { tier = "large", history = [], maxSteps = 5, stepTimeoutMs = 60_000, signal }: AgentOptions = {},
 ): AsyncGenerator<AgentEvent> {
   const started = performance.now();
+  if (inputGuard) {
+    const verdict = await inputGuard(question);
+    if (verdict.category !== "support") {
+      const text = inputRefusal(verdict.category);
+      yield { type: "token", text };
+      yield {
+        type: "final",
+        answer: {
+          answer: text,
+          kind: "refuse",
+          citations: [],
+          confidence: "high",
+          needsHuman: false,
+          invalidCitations: [],
+          grounded: false,
+          model: llm.modelId("small"),
+          usage: { inputTokens: 0, outputTokens: 0 },
+          latencyMs: Math.round(performance.now() - started),
+          attempts: 1,
+          guardFlags: [`input:${verdict.category}`],
+          toolCalls: [],
+          retrieved: [],
+          steps: 0,
+        },
+      };
+      return;
+    }
+  }
   const toolset = await loadMcpToolset(mcp);
   const tools: ToolSet = { [SEARCH_DOCS]: searchDocsTool, ...toolset.definitions };
   const sources: Source[] = [];
@@ -117,6 +161,7 @@ export async function* runAgent(
 
   let steps = 0;
   let awaitingApproval = false;
+  let approvalConfirmed = false;
   while (steps < maxSteps && !awaitingApproval) {
     const step = await generateText({
       model: llm.model(tier),
@@ -163,6 +208,7 @@ export async function* runAgent(
         text = `Tool failed: ${error instanceof Error ? error.message : "unknown error"}`;
       }
       const pending = ok && toolset.highRisk.has(call.toolName) ? parseApprovalPending(text) : null;
+      if (ok && call.toolName !== SEARCH_DOCS && APPROVED_REFUND.test(text)) approvalConfirmed = true;
       records.push({
         id: call.toolCallId,
         name: call.toolName,
@@ -176,12 +222,7 @@ export async function* runAgent(
         awaitingApproval = true;
         yield { type: "approval_pending", actionId: pending.actionId, summary: pending.summary };
       }
-      results.push({
-        type: "tool-result" as const,
-        toolCallId: call.toolCallId,
-        toolName: call.toolName,
-        output: { type: "text" as const, value: text.slice(0, TOOL_RESULT_LIMIT) },
-      });
+      results.push(toolResult(call.toolCallId, call.toolName, text));
     }
     messages.push({ role: "tool", content: results });
   }
@@ -208,17 +249,7 @@ export async function* runAgent(
         role: "assistant",
         content: [{ type: "tool-call", toolCallId: id, toolName: SEARCH_DOCS, input: args }],
       },
-      {
-        role: "tool",
-        content: [
-          {
-            type: "tool-result",
-            toolCallId: id,
-            toolName: SEARCH_DOCS,
-            output: { type: "text", value: text },
-          },
-        ],
-      },
+      { role: "tool", content: [toolResult(id, SEARCH_DOCS, text)] },
     );
   }
 
@@ -257,7 +288,7 @@ export async function* runAgent(
         latencyMs: 0,
         attempts: 2,
       },
-      { groundedByTools },
+      { groundedByTools, approvalConfirmed },
     );
   };
 
@@ -269,6 +300,7 @@ export async function* runAgent(
     sources,
     fallback: blocking,
     groundedByTools,
+    approvalConfirmed,
     priorUsage: usage,
     signal,
   })) {

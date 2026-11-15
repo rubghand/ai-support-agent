@@ -2,12 +2,24 @@ import type { Db } from "@app/db";
 import { NoObjectGeneratedError, Output, generateText } from "ai";
 import { z } from "zod";
 import type { Llm, ModelTier } from "../llm/provider";
+import { INPUT_CLASSIFIER_PROMPT } from "../guard/input";
+import { checkOutput } from "../guard/output";
+import { wrapUntrusted } from "../guard/untrusted";
+import { SUMMARY_SYSTEM_PROMPT } from "../memory/summarize";
+import { AGENT_SYSTEM_PROMPT } from "../prompts/agent";
 import { SUPPORT_SYSTEM_PROMPT } from "../prompts/system";
 import type { Embedder } from "./embed";
 import { type RetrievedChunk, retrieve } from "./search";
 
+export const ANSWER_KINDS = ["answer", "clarify", "refuse"] as const;
+
 export const answerSchema = z.object({
   answer: z.string().trim().min(1).describe("The reply to the customer, with [S1]-style citation markers."),
+  kind: z
+    .enum(ANSWER_KINDS)
+    .describe(
+      '"answer": gives information from sources or tool results. "clarify": asks the customer a question, or replies to a greeting or thanks. "refuse": you cannot help (off-topic, not in the sources, or not allowed).',
+    ),
   citations: z.array(z.string()).describe('Source ids cited in the answer, e.g. ["S1", "S3"].'),
   confidence: z.enum(["high", "medium", "low"]),
   needsHuman: z.boolean().describe("True when a human agent should follow up."),
@@ -25,6 +37,7 @@ export interface Citation {
 
 export interface CitedAnswer {
   answer: string;
+  kind: ModelAnswer["kind"];
   citations: Citation[];
   confidence: ModelAnswer["confidence"];
   needsHuman: boolean;
@@ -37,6 +50,8 @@ export interface CitedAnswer {
   latencyMs: number;
   /** 1 normally; 2 when the first output failed schema validation and was retried. */
   attempts: number;
+  /** Guardrails that fired, e.g. `input:off_topic`, `output:uncited`. Empty for a normal reply. */
+  guardFlags: string[];
 }
 
 export type Source = RetrievedChunk & { label: string };
@@ -45,11 +60,14 @@ export function labelSources(chunks: RetrievedChunk[]): Source[] {
   return chunks.map((chunk, i) => ({ ...chunk, label: `S${i + 1}` }));
 }
 
-const escapeSource = (text: string) => text.replaceAll("</source>", "</ source>");
-
 /** One source block, with its date so the model can resolve conflicts. */
 export function renderSource(s: Source): string {
-  return `<source id="${s.label}" title="${s.title}" section="${s.headingPath}" updated="${s.updatedOn.toISOString().slice(0, 10)}">\n${escapeSource(s.content)}\n</source>`;
+  return wrapUntrusted("source", s.content, {
+    id: s.label,
+    title: s.title,
+    section: s.headingPath,
+    updated: s.updatedOn.toISOString().slice(0, 10),
+  });
 }
 
 /** Dynamic part of the prompt: retrieved sources (with dates for conflict handling) and the question. */
@@ -124,7 +142,7 @@ export async function generateCitedAnswer(
     usage.outputTokens += error.usage?.outputTokens ?? 0;
     attempts = 2;
     output = await attempt(
-      "Your previous reply was not valid. Respond with a single JSON object with exactly the keys answer, citations, confidence, needsHuman.",
+      "Your previous reply was not valid. Respond with a single JSON object with exactly the keys answer, kind, citations, confidence, needsHuman.",
     );
   }
 
@@ -136,22 +154,51 @@ export async function generateCitedAnswer(
   });
 }
 
-/** Resolves citations and applies the grounding rule; shared by the blocking and streaming paths. */
+/** Prompts the customer must never see; the output guard blocks replies that repeat them. */
+export const PROTECTED_PROMPTS = [
+  SUPPORT_SYSTEM_PROMPT,
+  AGENT_SYSTEM_PROMPT,
+  SUMMARY_SYSTEM_PROMPT,
+  INPUT_CLASSIFIER_PROMPT,
+];
+
+export interface FinalizeOptions {
+  /** Facts fetched from a tool (e.g. an order's status) ground an answer even without a doc citation. */
+  groundedByTools?: boolean;
+  /** A tool result this turn shows an approved refund. */
+  approvalConfirmed?: boolean;
+}
+
+/**
+ * Resolves citations, applies the grounding rule, and runs the output guard; shared by the blocking
+ * and streaming paths. A guarded reply is replaced by fixed text and loses its citations.
+ */
 export function finalizeAnswer(
   output: ModelAnswer,
   sources: Source[],
   meta: Pick<CitedAnswer, "model" | "usage" | "latencyMs" | "attempts">,
-  { groundedByTools = false }: { groundedByTools?: boolean } = {},
+  { groundedByTools = false, approvalConfirmed = false }: FinalizeOptions = {},
 ): CitedAnswer {
   const resolved = resolveCitations(output, sources);
-  // Facts fetched from a tool (e.g. an order's status) ground an answer even without a doc citation.
-  const grounded = resolved.citations.length > 0 || groundedByTools;
+  const cited = resolved.citations.length > 0 || groundedByTools;
+  const check = checkOutput({
+    answer: resolved.answer,
+    kind: output.kind,
+    grounded: cited,
+    approvalConfirmed,
+    protectedTexts: PROTECTED_PROMPTS,
+  });
+  const grounded = cited && !check.replaced;
   return {
     ...resolved,
+    answer: check.answer,
+    kind: output.kind,
+    citations: check.replaced ? [] : resolved.citations,
     // An answer with no valid citation can't be trusted, whatever the model claimed.
     confidence: grounded ? output.confidence : "low",
-    needsHuman: output.needsHuman,
+    needsHuman: output.needsHuman || check.needsHuman,
     grounded,
+    guardFlags: check.violations.map((v) => `output:${v}`),
     ...meta,
   };
 }

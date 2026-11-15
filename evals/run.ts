@@ -5,6 +5,7 @@ import {
   type AgentAnswer,
   type Identity,
   type ModelTier,
+  checkInput,
   createLlm,
   createLocalEmbedder,
   loadConfig,
@@ -68,7 +69,12 @@ async function ask(email: string, question: string): Promise<AgentAnswer> {
   const mcp = await createInProcessClient({ db, identity: await identityFor(email) });
   try {
     for await (const event of runAgent(
-      { llm, mcp: mcp.client, search: (query) => retrieve(db, embedder, query, { k: 5 }) },
+      {
+        llm,
+        mcp: mcp.client,
+        search: (query) => retrieve(db, embedder, query, { k: 5 }),
+        inputGuard: (q) => checkInput(llm, q),
+      },
       question,
       { tier },
     )) {
@@ -124,6 +130,7 @@ for (const c of cases) {
       ...base,
       answer: r.answer,
       observed: observedBehaviors(r),
+      guardFlags: r.guardFlags,
       behaviorOk: behaviorMatches(r, c.expectedBehavior),
       contentOk: content.ok,
       toolsOk: tools.ok,
@@ -165,7 +172,8 @@ for (const c of cases) {
     : last.behaviorOk && last.contentOk && last.toolsOk && last.groundedOk !== false
       ? "ok  "
       : "FAIL";
-  console.log(`${flag} ${last.id} (${last.category}) ${last.error ?? last.observed?.join("+")}`);
+  const guards = last.guardFlags?.length ? ` [${last.guardFlags.join(", ")}]` : "";
+  console.log(`${flag} ${last.id} (${last.category}) ${last.error ?? last.observed?.join("+")}${guards}`);
 }
 await close();
 

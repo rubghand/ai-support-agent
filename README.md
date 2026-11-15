@@ -52,25 +52,33 @@ Retrieval on the golden set (35 paraphrased customer questions, document-level).
 
 ### End-to-end answer quality
 
-50 golden cases through the full agent (`npm run eval`): 20 answerable, 5 multi-doc, 5 unanswerable, 5 off-topic, 5 injection, 10 tools (expected tool + arguments).
+60 golden cases through the full agent and its guardrails (`npm run eval`): 20 answerable, 5 multi-doc, 5 unanswerable, 5 off-topic, 15 injection (direct, and indirect via a poisoned doc), 10 tools (expected tool + arguments).
 Scorers: behavior, content, retrieval, citation precision (deterministic) and groundedness (LLM judge, calibrated with `npm run eval:judge`).
 
 <!-- EVAL:START -->
 
-Model: qwen3:14b (ollama, tier large); 50 cases; 2026-11-15T10:00:10.968Z.
+Model: qwen3:14b (ollama, tier large); 60 cases; 2026-11-15T18:07:07.129Z.
 Cost is projected at Anthropic list prices (haiku-4-5 for small, sonnet-4-5 for large); local runs cost $0.
 
 | Category     | Cases | Behavior | Content | Tools | hit@5 | MRR  | Citation precision | Grounded (judge) | Avg latency | Avg tokens | Projected cost/query |
 | ------------ | ----- | -------- | ------- | ----- | ----- | ---- | ------------------ | ---------------- | ----------- | ---------- | -------------------- |
-| answerable   | 20    | 100%     | 100%    | 100%  | 100%  | 0.83 | 92%                | 100%             | 7.7s        | 3495       | $0.0120              |
-| multi-doc    | 5     | 100%     | 100%    | 100%  | 100%  | 1.00 | 100%               | 100%             | 11.6s       | 4838       | $0.0165              |
-| unanswerable | 5     | 20%      | 100%    | 100%  | n/a   | n/a  | n/a                | 100%             | 8.7s        | 3375       | $0.0114              |
-| off-topic    | 5     | 100%     | 100%    | 100%  | n/a   | n/a  | n/a                | n/a              | 6.8s        | 3022       | $0.0099              |
-| injection    | 5     | 100%     | 100%    | 100%  | 100%  | 1.00 | 100%               | 100%             | 8.0s        | 3891       | $0.0131              |
-| tools        | 10    | 100%     | 100%    | 100%  | n/a   | n/a  | n/a                | 100%             | 6.8s        | 3764       | $0.0128              |
-| **all**      | 50    | 92%      | 100%    | 100%  | 100%  | 0.87 | 94%                | 100%             | 8.0s        | 3664       | $0.0125              |
+| answerable   | 20    | 100%     | 100%    | 100%  | 100%  | 0.85 | 95%                | 95%              | 12.3s       | 4878       | $0.0164              |
+| multi-doc    | 5     | 100%     | 100%    | 100%  | 100%  | 1.00 | 100%               | 100%             | 14.5s       | 6272       | $0.0210              |
+| unanswerable | 5     | 20%      | 100%    | 100%  | n/a   | n/a  | n/a                | 100%             | 12.0s       | 5040       | $0.0168              |
+| off-topic    | 5     | 100%     | 100%    | 100%  | n/a   | n/a  | n/a                | n/a              | 1.5s        | 0          | $0.0000              |
+| injection    | 15    | 100%     | 100%    | 100%  | 100%  | 1.00 | 90%                | 100%             | 5.1s        | 2058       | $0.0069              |
+| tools        | 10    | 100%     | 100%    | 100%  | n/a   | n/a  | n/a                | 100%             | 8.8s        | 4645       | $0.0156              |
+| **all**      | 60    | 93%      | 100%    | 100%  | 100%  | 0.90 | 95%                | 97%              | 9.2s        | 3857       | $0.0130              |
 
 <!-- EVAL:END -->
+
+Off-topic and most injection messages are stopped by the input guard (heuristics, then a `qwen3:4b` classifier) before
+the large model runs, hence their low latency and zero large-model tokens. The three to four unanswerable failures are
+replies like "X isn't supported, but you can use Y [S1]": they cite a real source, so the output guard's
+"cite or refuse" rule doesn't catch them. Which of them fail varies between runs.
+
+Input-guard classifier (`npm run eval:guard`, 28 labelled messages): 0/20 support messages blocked; 2/8 newly worded
+injection attempts let through to the agent, where the approval gate and output guard still apply.
 
 ## Checks
 

@@ -2,7 +2,14 @@ import { type Db, conversations, messages } from "@app/db";
 import type { ModelMessage } from "ai";
 import { and, asc, eq, isNull, lt } from "drizzle-orm";
 import type { Llm } from "../llm/provider";
-import { MEMORY_DEFAULTS, type MemoryOptions, messageTokens, planContext, toModelMessages } from "./context";
+import {
+  type HistoryMessage,
+  MEMORY_DEFAULTS,
+  type MemoryOptions,
+  messageTokens,
+  planContext,
+  toModelMessages,
+} from "./context";
 import { summarizeConversation } from "./summarize";
 import { countTokens } from "./tokens";
 
@@ -10,6 +17,8 @@ export interface ConversationHistory {
   /** Prior turns for the agent prompt: the summary (if any) followed by recent messages verbatim. */
   messages: ModelMessage[];
   summary: string | null;
+  /** The messages sent verbatim (oldest first). */
+  recent: HistoryMessage[];
   /** Estimated tokens of `messages`. */
   tokens: number;
   /** Messages folded into the summary during this call (0 if none, or if summarizing failed). */
@@ -80,5 +89,11 @@ export async function loadConversationHistory(
   }
 
   const tokens = (summary ? countTokens(summary) : 0) + plan.recent.reduce((n, m) => n + messageTokens(m), 0);
-  return { messages: toModelMessages(summary, plan.recent), summary, tokens, summarizedNow };
+  return {
+    messages: toModelMessages(summary, plan.recent),
+    summary,
+    recent: plan.recent,
+    tokens,
+    summarizedNow,
+  };
 }
