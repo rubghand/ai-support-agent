@@ -1,7 +1,13 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { parseArgs } from "node:util";
-import { type RetrieveOptions, createLocalEmbedder, loadConfig, retrieve } from "@app/core";
+import {
+  type RetrieveOptions,
+  createLocalEmbedder,
+  createLocalReranker,
+  loadConfig,
+  retrieve,
+} from "@app/core";
 import { createDb } from "@app/db";
 import { loadCases } from "./cases";
 import {
@@ -14,6 +20,7 @@ import {
 /** Configurations compared side by side; the first one is the production default. */
 const CONFIGS: Record<string, RetrieveOptions> = {
   "hybrid (idf, 1:1) [default]": {},
+  "hybrid + rerank (top-20 → k)": { reranker: createLocalReranker() },
   "vector only": { mode: "vector" },
   "keyword ts_rank only": { mode: "keyword", keywordScoring: "ts_rank" },
   "keyword idf only": { mode: "keyword", keywordScoring: "idf" },
@@ -25,6 +32,8 @@ const CONFIGS: Record<string, RetrieveOptions> = {
 const { values } = parseArgs({
   options: {
     all: { type: "boolean", default: false },
+    /** Baseline vs +rerank only. */
+    compare: { type: "boolean", default: false },
     "min-hit3": { type: "string" },
     out: { type: "string" },
   },
@@ -33,7 +42,11 @@ const { values } = parseArgs({
 const cases = (await loadCases()).filter((c) => c.category === "answerable");
 const embedder = createLocalEmbedder();
 const { db, close } = createDb(loadConfig().DATABASE_URL);
-const configNames = values.all ? Object.keys(CONFIGS) : [Object.keys(CONFIGS)[0]!];
+const configNames = values.all
+  ? Object.keys(CONFIGS)
+  : values.compare
+    ? Object.keys(CONFIGS).slice(0, 2)
+    : [Object.keys(CONFIGS)[0]!];
 
 const results: Array<RetrievalSummary & { config: string; msPerQuery: number }> = [];
 const misses: string[] = [];

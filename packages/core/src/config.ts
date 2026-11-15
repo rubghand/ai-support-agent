@@ -14,6 +14,8 @@ const envSchema = z.object({
   DATABASE_URL: z.string().url().default("postgres://agent:agent@localhost:5455/agent"),
   LLM_PROVIDER: z.enum(LLM_PROVIDERS).default("ollama"),
   OLLAMA_BASE_URL: z.string().url().default("http://localhost:11434"),
+  /** "auto" routes simple questions to the small model; off by default (see ADR 006). */
+  MODEL_ROUTING: z.enum(["off", "auto"]).default("off"),
   MODEL_SMALL: z.string().min(1).optional(),
   MODEL_LARGE: z.string().min(1).optional(),
   GOOGLE_GENERATIVE_AI_API_KEY: z.string().min(1).optional(),

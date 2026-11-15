@@ -262,3 +262,30 @@ export const pendingActions = pgTable(
     index("pending_actions_status_idx").on(t.status, t.createdAt),
   ],
 );
+
+// ---------- Telemetry ----------
+
+/** One model call (guard, router, summary, agent step, final answer, ...) with tokens, latency and projected cost. */
+export const llmCalls = pgTable(
+  "llm_calls",
+  {
+    id: serial("id").primaryKey(),
+    conversationId: text("conversation_id").references(() => conversations.id, { onDelete: "set null" }),
+    /** What the call was for: guard, route, summary, agent. */
+    purpose: text("purpose").notNull(),
+    tier: text("tier").notNull(),
+    model: text("model").notNull(),
+    inputTokens: integer("input_tokens").notNull(),
+    outputTokens: integer("output_tokens").notNull(),
+    latencyMs: integer("latency_ms").notNull(),
+    /** What this call would cost at the reference cloud model's list price (local models cost $0). */
+    projectedCostUsd: doublePrecision("projected_cost_usd").notNull(),
+    /** The reference model the projection used, e.g. claude-haiku-4-5. */
+    priceModel: text("price_model").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("llm_calls_conversation_idx").on(t.conversationId),
+    index("llm_calls_created_idx").on(t.createdAt),
+  ],
+);

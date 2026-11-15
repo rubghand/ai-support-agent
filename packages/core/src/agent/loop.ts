@@ -21,6 +21,8 @@ export interface AgentDeps {
   search: (query: string) => Promise<RetrievedChunk[]>;
   /** Screens the question before any model or tool runs (see `checkInput`); no screening when omitted. */
   inputGuard?: (question: string) => Promise<InputVerdict>;
+  /** Picks the model tier after the guard passes (see `routeQuestion`); `options.tier` is used when omitted. */
+  route?: (question: string) => Promise<ModelTier>;
 }
 
 export interface AgentOptions {
@@ -102,9 +104,15 @@ const toolResult = (toolCallId: string, toolName: string, text: string) => ({
  * the answer tells the customer the request is pending. Staff decisions are posted to the chat later.
  */
 export async function* runAgent(
-  { llm, mcp, search, inputGuard }: AgentDeps,
+  { llm, mcp, search, inputGuard, route }: AgentDeps,
   question: string,
-  { tier = "large", history = [], maxSteps = 5, stepTimeoutMs = 60_000, signal }: AgentOptions = {},
+  {
+    tier: defaultTier = "large",
+    history = [],
+    maxSteps = 5,
+    stepTimeoutMs = 60_000,
+    signal,
+  }: AgentOptions = {},
 ): AsyncGenerator<AgentEvent> {
   const started = performance.now();
   if (inputGuard) {
@@ -135,6 +143,7 @@ export async function* runAgent(
       return;
     }
   }
+  const tier = route ? await route(question) : defaultTier;
   const toolset = await loadMcpToolset(mcp);
   const tools: ToolSet = { [SEARCH_DOCS]: searchDocsTool, ...toolset.definitions };
   const sources: Source[] = [];

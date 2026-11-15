@@ -80,6 +80,22 @@ replies like "X isn't supported, but you can use Y [S1]": they cite a real sourc
 Input-guard classifier (`npm run eval:guard`, 28 labelled messages): 0/20 support messages blocked; 2/8 newly worded
 injection attempts let through to the agent, where the approval gate and output guard still apply.
 
+### Reranking, routing, and cost (Phase 15)
+
+`npm run eval:compare` (each row is one `npm run eval -- --label ...` run; cost counts every model call, including guard and router):
+
+| Config            | Behavior | Tools | hit@5 | MRR  | Grounded (judge) | Avg latency | Routed small | Projected cost/query |
+| ----------------- | -------- | ----- | ----- | ---- | ---------------- | ----------- | ------------ | -------------------- |
+| baseline (large)  | 92%      | 98%   | 100%  | 0.90 | 97%              | 8.7s        | 0%           | $0.0130              |
+| + rerank          | 93%      | 100%  | 100%  | 0.95 | 100%             | 9.5s        | 0%           | $0.0136              |
+| + rerank + router | 93%      | 100%  | 97%   | 0.95 | 91%              | 13.6s       | 31%          | $0.0129              |
+
+Retrieval alone (`npm run eval:retrieval -- --compare`): hit@3 94.3% to 100%, MRR 0.852 to 0.943, 9 ms to about 1 s per query.
+The cross-encoder reranker is on in the chat route. The model router is implemented but **off by default**
+(`MODEL_ROUTING=auto` enables it): with local Qwen the 4B model was slower in the agent loop and less grounded, for no
+cost saving. Details and caveats (single runs, same-author golden set) in [ADR 006](docs/adr/006-model-routing-and-prompt-layout.md).
+Every model call is stored in `llm_calls` (purpose, tokens, latency, projected cost).
+
 ## Checks
 
 ```bash

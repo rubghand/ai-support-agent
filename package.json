@@ -33,7 +33,8 @@
     "eval:judge": "tsx --env-file-if-exists=.env evals/judge-calibration.ts",
     "eval:retrieval": "tsx --env-file-if-exists=.env evals/retrieval.ts",
     "eval:guard": "tsx --env-file-if-exists=.env evals/guard.ts",
-    "setup": "npm run db:up && npm run db:migrate && npm run db:seed && npm run ingest"
+    "setup": "npm run db:up && npm run db:migrate && npm run db:seed && npm run ingest",
+    "eval:compare": "tsx --env-file-if-exists=.env evals/compare.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9",

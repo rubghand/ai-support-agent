@@ -1,4 +1,4 @@
-import { createLlm, createLocalEmbedder, loadConfig } from "@app/core";
+import { createLlm, createLocalEmbedder, createLocalReranker, loadConfig } from "@app/core";
 import { createDb } from "@app/db";
 
 export type Role = "customer" | "admin";
@@ -7,7 +7,13 @@ export type Role = "customer" | "admin";
 function create() {
   const config = loadConfig();
   const { db } = createDb(config.DATABASE_URL);
-  return { db, embedder: createLocalEmbedder(), llm: createLlm(config) };
+  return {
+    db,
+    embedder: createLocalEmbedder(),
+    reranker: createLocalReranker(),
+    llm: createLlm(config),
+    modelRouting: config.MODEL_ROUTING,
+  };
 }
 
 const globalForServices = globalThis as unknown as { __services?: ReturnType<typeof create> };

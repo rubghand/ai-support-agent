@@ -1,5 +1,23 @@
 export { DEFAULT_MODELS, LLM_PROVIDERS, loadConfig, type AppConfig, type LlmProvider } from "./config";
 export { createLlm, type Llm, type ModelTier } from "./llm/provider";
+export {
+  classifyComplexity,
+  routeByHeuristics,
+  routeQuestion,
+  type RouteContext,
+  type RouteDecision,
+  type RouteSource,
+} from "./llm/router";
+export {
+  CALL_PURPOSES,
+  PRICE_TABLE,
+  createCallCollector,
+  projectCostUsd,
+  saveLlmCalls,
+  type CallCollector,
+  type CallPurpose,
+  type LlmCallRecord,
+} from "./telemetry/usage";
 export { SUPPORT_SYSTEM_PROMPT } from "./prompts/system";
 export {
   ANSWER_KINDS,
@@ -37,6 +55,13 @@ export {
   type Chunk,
   type ChunkOptions,
 } from "./rag/chunk";
+export {
+  RERANKER_MODEL,
+  createLocalReranker,
+  rerankChunks,
+  type RerankOptions,
+  type Reranker,
+} from "./rag/rerank";
 export { EMBEDDING_MODEL, createLocalEmbedder, type Embedder } from "./rag/embed";
 export { ingestKnowledgeBase, type IngestStats } from "./rag/ingest";
 export {

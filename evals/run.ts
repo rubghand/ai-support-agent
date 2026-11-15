@@ -2,14 +2,16 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import {
-  type AgentAnswer,
   type Identity,
   type ModelTier,
   checkInput,
+  createCallCollector,
   createLlm,
   createLocalEmbedder,
+  createLocalReranker,
   loadConfig,
   retrieve,
+  routeQuestion,
   runAgent,
 } from "@app/core";
 import { auditLog, createDb, pendingActions, refunds, tickets, users } from "@app/db";
@@ -23,7 +25,6 @@ import {
   checkTools,
   citationPrecision,
   observedBehaviors,
-  projectedCostUsd,
 } from "./scorers/answer";
 import { judgeGroundedness } from "./scorers/judge";
 import { firstRelevantRank, rankedDocuments } from "./scorers/retrieval";
@@ -31,7 +32,12 @@ import { firstRelevantRank, rankedDocuments } from "./scorers/retrieval";
 const { values } = parseArgs({
   options: {
     category: { type: "string" },
+    /** small | large force a tier; auto uses the router. */
     tier: { type: "string", default: "large" },
+    /** Cross-encoder rerank of the top 20 retrieved chunks. */
+    rerank: { type: "boolean", default: false },
+    /** Names this configuration in the result file, for `npm run eval:compare`. */
+    label: { type: "string" },
     /** The golden file holds 35 retrieval-eval cases; only this many run through the LLM by default. */
     "answerable-limit": { type: "string", default: "20" },
     "no-judge": { type: "boolean", default: false },
@@ -39,8 +45,9 @@ const { values } = parseArgs({
   },
 });
 
-const tier = values.tier as ModelTier;
-if (!["small", "large"].includes(tier)) throw new Error("--tier must be small or large");
+const tierSetting = values.tier as ModelTier | "auto";
+if (!["small", "large", "auto"].includes(tierSetting)) throw new Error("--tier must be small, large or auto");
+const label = values.label ?? `${tierSetting}${values.rerank ? "+rerank" : ""}`;
 if (values.category && !CATEGORIES.includes(values.category as Category)) {
   throw new Error(`--category must be one of ${CATEGORIES.join(", ")}`);
 }
@@ -55,6 +62,7 @@ const cases: EvalCase[] = (await loadCases()).filter((c) => {
 const config = loadConfig();
 const llm = createLlm(config);
 const embedder = createLocalEmbedder();
+const reranker = values.rerank ? createLocalReranker() : undefined;
 const { db, close } = createDb(config.DATABASE_URL);
 const results: CaseResult[] = [];
 
@@ -64,21 +72,27 @@ async function identityFor(email: string): Promise<Identity> {
   return { userId: user.id, role: user.role, customerId: user.customerId };
 }
 
-/** Runs the agent as `email` and returns its final answer. */
-async function ask(email: string, question: string): Promise<AgentAnswer> {
+/** Runs the agent as `email`; returns its final answer plus what every model call (guard, router, agent) used. */
+async function ask(email: string, question: string) {
+  const calls = createCallCollector();
+  let routedTier: ModelTier | null = null;
   const mcp = await createInProcessClient({ db, identity: await identityFor(email) });
   try {
     for await (const event of runAgent(
       {
-        llm,
+        llm: calls.meter(llm, "agent"),
         mcp: mcp.client,
-        search: (query) => retrieve(db, embedder, query, { k: 5 }),
-        inputGuard: (q) => checkInput(llm, q),
+        search: (query) => retrieve(db, embedder, query, { k: 5, candidates: 20, reranker }),
+        inputGuard: (q) => checkInput(calls.meter(llm, "guard"), q),
+        route: async (q) => {
+          routedTier =
+            tierSetting === "auto" ? (await routeQuestion(calls.meter(llm, "route"), q)).tier : tierSetting;
+          return routedTier;
+        },
       },
       question,
-      { tier },
     )) {
-      if (event.type === "final") return event.answer;
+      if (event.type === "final") return { answer: event.answer, routedTier, totals: calls.totals() };
     }
     throw new Error("agent produced no answer");
   } finally {
@@ -114,7 +128,7 @@ for (const c of cases) {
     hasExpectedDocs: c.expectedDocIds.length > 0,
   };
   try {
-    const r = await ask(c.user, c.question);
+    const { answer: r, routedTier, totals } = await ask(c.user, c.question);
     const rank = firstRelevantRank(rankedDocuments(r.retrieved.map((ch) => ch.documentId)), c.expectedDocIds);
     const content = checkContent(r.answer, c.mustContain, c.mustNotContain);
     let groundedOk: boolean | null = null;
@@ -145,9 +159,10 @@ for (const c of cases) {
       groundedOk,
       groundedReason,
       latencyMs: r.latencyMs,
-      inputTokens: r.usage.inputTokens,
-      outputTokens: r.usage.outputTokens,
-      costUsd: projectedCostUsd(tier, r.usage.inputTokens, r.usage.outputTokens),
+      routedTier,
+      inputTokens: totals.inputTokens,
+      outputTokens: totals.outputTokens,
+      costUsd: totals.projectedCostUsd,
     });
   } catch (error) {
     results.push({
@@ -181,10 +196,10 @@ const table = renderTable(results);
 const stamp = new Date().toISOString().replaceAll(":", "-").slice(0, 19);
 const dir = path.resolve(import.meta.dirname, "results");
 await mkdir(dir, { recursive: true });
-const header = `Model: ${llm.modelId(tier)} (${llm.provider}, tier ${tier}); ${results.length} cases; ${new Date().toISOString()}.\nCost is projected at Anthropic list prices (haiku-4-5 for small, sonnet-4-5 for large); local runs cost $0.`;
+const header = `Model: ${tierSetting === "auto" ? `${llm.modelId("small")} / ${llm.modelId("large")}` : llm.modelId(tierSetting)} (${llm.provider}, tier ${tierSetting}${values.rerank ? ", rerank" : ""}); ${results.length} cases; ${new Date().toISOString()}.\nCost is projected at Anthropic list prices (haiku-4-5 for small, sonnet-4-5 for large) and counts every call (guard, router, agent steps, answer); local runs cost $0.`;
 await writeFile(
   path.join(dir, `${stamp}.json`),
-  `${JSON.stringify({ tier, model: llm.modelId(tier), results }, null, 2)}\n`,
+  `${JSON.stringify({ label, tier: tierSetting, rerank: Boolean(values.rerank), results }, null, 2)}\n`,
 );
 await writeFile(path.join(dir, `${stamp}.md`), `${header}\n\n${table}\n`);
 

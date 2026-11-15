@@ -50,6 +50,13 @@
       "when": 1794762900016,
       "tag": "0006_fuzzy_jamie_braddock",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1794766927949,
+      "tag": "0007_watery_blackheart",
+      "breakpoints": true
     }
   ]
 }

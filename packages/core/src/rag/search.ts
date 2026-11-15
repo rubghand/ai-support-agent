@@ -1,6 +1,7 @@
 import { type Db, chunks, documents } from "@app/db";
 import { eq, inArray, sql } from "drizzle-orm";
 import type { Embedder } from "./embed";
+import { type Reranker, rerankChunks } from "./rerank";
 
 export type RetrievalMode = "hybrid" | "vector" | "keyword";
 export type KeywordScoring = "ts_rank" | "idf";
@@ -16,9 +17,14 @@ export interface RetrieveOptions {
   weights?: { vector: number; keyword: number };
   /** RRF damping constant; 60 is the value from the original paper and a common default. */
   rrfK?: number;
+  /**
+   * Cross-encoder applied to the fused top `candidates`; the best `k` are returned. Off when omitted.
+   * Fusion then only has to put the right chunk somewhere in the candidate list, not at the top.
+   */
+  reranker?: Reranker;
 }
 
-export const DEFAULT_RETRIEVE_OPTIONS: Required<RetrieveOptions> = {
+export const DEFAULT_RETRIEVE_OPTIONS: Required<Omit<RetrieveOptions, "reranker">> = {
   k: 5,
   candidates: 20,
   mode: "hybrid",
@@ -39,6 +45,8 @@ export interface RetrievedChunk {
   /** 1-based rank in each retriever's list, or null if that retriever didn't return the chunk. */
   vectorRank: number | null;
   keywordRank: number | null;
+  /** Cross-encoder score (higher is better); set only when a reranker ran. */
+  rerankScore?: number;
 }
 
 export interface RankedList {
@@ -122,6 +130,7 @@ export async function retrieve(
   options: RetrieveOptions = {},
 ): Promise<RetrievedChunk[]> {
   const { k, candidates, mode, keywordScoring, weights, rrfK } = { ...DEFAULT_RETRIEVE_OPTIONS, ...options };
+  const { reranker } = options;
   const keywordSearch = keywordScoring === "idf" ? keywordSearchIdf : keywordSearchTsRank;
 
   const [vectorIds, keywordIds] = await Promise.all([
@@ -135,7 +144,7 @@ export async function retrieve(
       { ids: keywordIds, weight: weights.keyword },
     ],
     rrfK,
-  ).slice(0, k);
+  ).slice(0, reranker ? Math.max(k, candidates) : k);
   if (fused.length === 0) return [];
 
   const rows = await db
@@ -159,10 +168,11 @@ export async function retrieve(
   const byId = new Map(rows.map((row) => [row.chunkId, row]));
   const rankIn = (list: string[], id: string) => (list.includes(id) ? list.indexOf(id) + 1 : null);
 
-  return fused.flatMap(({ id, score }) => {
+  const ranked = fused.flatMap(({ id, score }) => {
     const row = byId.get(id);
     return row
       ? [{ ...row, score, vectorRank: rankIn(vectorIds, id), keywordRank: rankIn(keywordIds, id) }]
       : [];
   });
+  return reranker ? rerankChunks(reranker, query, ranked, { k }) : ranked;
 }

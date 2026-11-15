@@ -23,6 +23,8 @@ export interface CaseResult {
   /** Null when the case wasn't judged (refusals, judge disabled). */
   groundedOk: boolean | null;
   groundedReason?: string;
+  /** Tier the router (or --tier) chose for the answer; null when the guard stopped the message first. */
+  routedTier?: "small" | "large" | null;
   latencyMs: number;
   inputTokens: number;
   outputTokens: number;
