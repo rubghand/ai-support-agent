@@ -1,6 +1,7 @@
 "use client";
 
 import { type ChatEvent, type Citation, parseSse } from "@app/core/client";
+import { useRouter } from "next/navigation";
 import { type FormEvent, useRef, useState } from "react";
 
 interface UiMessage {
@@ -15,6 +16,7 @@ interface UiMessage {
 }
 
 export function ChatWidget() {
+  const router = useRouter();
   const [messages, setMessages] = useState<UiMessage[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -70,6 +72,18 @@ export function ChatWidget() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message, conversationId: conversationId.current }),
       });
+      if (res.status === 429) {
+        const { retryAfterSeconds } = (await res.json()) as { retryAfterSeconds: number };
+        apply({
+          type: "error",
+          message: `You're sending messages too fast. Try again in ${retryAfterSeconds}s.`,
+        });
+        return;
+      }
+      if (res.status === 401) {
+        router.push("/login");
+        return;
+      }
       if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
       for await (const event of parseSse(res.body)) apply(event);
     } catch {

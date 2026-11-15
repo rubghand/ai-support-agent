@@ -2,6 +2,7 @@ import { type SQL, sql } from "drizzle-orm";
 import {
   customType,
   date,
+  doublePrecision,
   index,
   integer,
   jsonb,
@@ -117,6 +118,10 @@ export const messageRoleEnum = pgEnum("message_role", ["user", "assistant"]);
 
 export const conversations = pgTable("conversations", {
   id: text("id").primaryKey(),
+  /** Owner; only this user may read or append to the conversation. */
+  userId: integer("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -135,3 +140,23 @@ export const messages = pgTable(
   },
   (t) => [index("messages_conversation_id_idx").on(t.conversationId, t.id)],
 );
+
+// ---------- Auth + rate limiting ----------
+
+export const userRoleEnum = pgEnum("user_role", ["customer", "admin"]);
+
+export const users = pgTable("users", {
+  id: serial("id").primaryKey(),
+  email: text("email").notNull().unique(),
+  passwordHash: text("password_hash").notNull(),
+  role: userRoleEnum("role").notNull(),
+  /** Set for customers; the identity every support tool will act on. Null for admins. */
+  customerId: text("customer_id").references(() => customers.id),
+});
+
+export const rateLimits = pgTable("rate_limits", {
+  /** e.g. `chat:user:3` or `chat:ip:203.0.113.9`. */
+  key: text("key").primaryKey(),
+  tokens: doublePrecision("tokens").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+});

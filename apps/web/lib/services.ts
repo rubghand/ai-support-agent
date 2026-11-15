@@ -1,6 +1,8 @@
 import { createLlm, createLocalEmbedder, loadConfig } from "@app/core";
 import { createDb } from "@app/db";
 
+export type Role = "customer" | "admin";
+
 /** Process-wide singletons (one pool, one loaded embedding model); survive dev hot reloads via globalThis. */
 function create() {
   const config = loadConfig();

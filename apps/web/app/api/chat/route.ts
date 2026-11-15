@@ -1,5 +1,7 @@
 import {
+  CHAT_LIMITS,
   type ChatEvent,
+  consume,
   encodeSse,
   ensureConversation,
   retrieve,
@@ -8,6 +10,7 @@ import {
   streamCitedAnswer,
 } from "@app/core";
 import { z } from "zod";
+import { auth } from "@/auth";
 import { getServices } from "@/lib/services";
 
 const bodySchema = z.object({
@@ -16,15 +19,35 @@ const bodySchema = z.object({
   tier: z.enum(["small", "large"]).default("large"),
 });
 
+/** Behind a proxy the first X-Forwarded-For entry is the client; without one, requests share the "unknown" bucket. */
+function clientIp(request: Request): string {
+  return request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+}
+
 export async function POST(request: Request) {
+  const session = await auth();
+  if (!session?.user) return Response.json({ error: "Not signed in" }, { status: 401 });
+  const { userId } = session.user;
+  const { db, embedder, llm } = getServices();
+
+  const [byUser, byIp] = await Promise.all([
+    consume(db, `chat:user:${userId}`, CHAT_LIMITS.user),
+    consume(db, `chat:ip:${clientIp(request)}`, CHAT_LIMITS.ip),
+  ]);
+  if (!byUser.allowed || !byIp.allowed) {
+    const retryAfter = Math.max(byUser.retryAfterSeconds, byIp.retryAfterSeconds);
+    return Response.json(
+      { error: "Too many requests", retryAfterSeconds: retryAfter },
+      { status: 429, headers: { "Retry-After": String(retryAfter) } },
+    );
+  }
+
   const parsed = bodySchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     return Response.json({ error: z.prettifyError(parsed.error) }, { status: 400 });
   }
   const { message, conversationId: requestedId, tier } = parsed.data;
-  const { db, embedder, llm } = getServices();
-
-  const conversationId = await ensureConversation(db, requestedId);
+  const conversationId = await ensureConversation(db, userId, requestedId);
   if (!conversationId) return Response.json({ error: "Conversation not found" }, { status: 404 });
   await saveUserMessage(db, conversationId, message);
 

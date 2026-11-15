@@ -1,14 +1,17 @@
 import type { Db } from "./client";
-import { customers, orders, tickets } from "./schema";
+import { hashPassword } from "./password";
+import { customers, orders, tickets, users } from "./schema";
 
 type Customer = typeof customers.$inferInsert;
 type Order = typeof orders.$inferInsert;
 type Ticket = typeof tickets.$inferInsert;
+type User = typeof users.$inferInsert;
 
 export interface SeedData {
   customers: Customer[];
   orders: Order[];
   tickets: Ticket[];
+  users: User[];
 }
 
 /** Prices in cents, matching knowledge-base/billing/plans-and-pricing.md and add-ons.md. */
@@ -25,6 +28,10 @@ export const ADDON_PRICES = {
   "Priority support": 2900,
   "Data migration": 14900,
 } as const;
+
+/** Demo credentials only: every seeded user shares this password. */
+export const DEMO_PASSWORD = "demo1234";
+export const ADMIN_EMAIL = "admin@ledgerly.example";
 
 const SEED_NOW = new Date("2026-11-01T12:00:00Z");
 const DAY_MS = 86_400_000;
@@ -223,18 +230,40 @@ export function generateSeedData(seed = 42): SeedData {
     },
   ];
 
-  return { customers: seededCustomers, orders: seededOrders, tickets: seededTickets };
+  const demoUsers: User[] = [
+    ...seededCustomers.slice(0, 3).map((c) => ({
+      email: c.email,
+      passwordHash: hashPassword(DEMO_PASSWORD, c.email),
+      role: "customer" as const,
+      customerId: c.id,
+    })),
+    {
+      email: ADMIN_EMAIL,
+      passwordHash: hashPassword(DEMO_PASSWORD, ADMIN_EMAIL),
+      role: "admin",
+      customerId: null,
+    },
+  ];
+
+  return { customers: seededCustomers, orders: seededOrders, tickets: seededTickets, users: demoUsers };
 }
 
-/** Replaces all product data (customers, orders, tickets) with the deterministic seed. */
+/** Replaces all product data (customers, orders, tickets, demo users) with the deterministic seed. */
 export async function seedDatabase(db: Db, data: SeedData = generateSeedData()) {
   await db.transaction(async (tx) => {
+    await tx.delete(users);
     await tx.delete(tickets);
     await tx.delete(orders);
     await tx.delete(customers);
     await tx.insert(customers).values(data.customers);
     await tx.insert(orders).values(data.orders);
     await tx.insert(tickets).values(data.tickets);
+    await tx.insert(users).values(data.users);
   });
-  return { customers: data.customers.length, orders: data.orders.length, tickets: data.tickets.length };
+  return {
+    customers: data.customers.length,
+    orders: data.orders.length,
+    tickets: data.tickets.length,
+    users: data.users.length,
+  };
 }

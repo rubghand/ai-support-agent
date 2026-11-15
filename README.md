@@ -13,11 +13,15 @@ Built entirely on free tools: local models via Ollama, Postgres + pgvector, Next
 ```bash
 brew install ollama && brew services start ollama
 ollama pull qwen3:4b && ollama pull qwen3:14b
-cp .env.example .env
+cp .env.example .env   # then set AUTH_SECRET (openssl rand -base64 32)
 npm install
 npm run setup   # start Postgres, migrate, seed, ingest the knowledge base
 npm run dev
 ```
+
+Sign in at <http://localhost:3000/login> with a seeded demo user (password `demo1234`):
+`maya@brightpixelstudio.example` (customer, `CUS-001`), `lucas@moreauconsulting.example`, `aisha@bellobakery.example`,
+or `admin@ledgerly.example` (admin). The chat is limited to a burst of 10 messages per user, then 10 per minute.
 
 ## Try it
 

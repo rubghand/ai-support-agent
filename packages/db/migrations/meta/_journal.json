@@ -22,6 +22,13 @@
       "when": 1794723419314,
       "tag": "0002_wandering_zuras",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1794732058972,
+      "tag": "0003_dizzy_nightshade",
+      "breakpoints": true
     }
   ]
 }

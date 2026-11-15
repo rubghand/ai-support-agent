@@ -1,17 +1,18 @@
 import { type Db, conversations, messages } from "@app/db";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import type { CitedAnswer } from "../rag/answer";
 
-export async function ensureConversation(db: Db, id?: string): Promise<string | null> {
+/** Creates a conversation, or returns the given one only if `userId` owns it (null otherwise). */
+export async function ensureConversation(db: Db, userId: number, id?: string): Promise<string | null> {
   if (id) {
     const [existing] = await db
       .select({ id: conversations.id })
       .from(conversations)
-      .where(eq(conversations.id, id));
+      .where(and(eq(conversations.id, id), eq(conversations.userId, userId)));
     return existing?.id ?? null;
   }
   const newId = crypto.randomUUID();
-  await db.insert(conversations).values({ id: newId });
+  await db.insert(conversations).values({ id: newId, userId });
   return newId;
 }
 
