@@ -1,0 +1,18 @@
+{
+  "name": "@app/mcp-server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@app/core": "*",
+    "@app/db": "*",
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "zod": "^4"
+  }
+}
