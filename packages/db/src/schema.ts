@@ -289,3 +289,39 @@ export const llmCalls = pgTable(
     index("llm_calls_created_idx").on(t.createdAt),
   ],
 );
+
+/** One traced request (a chat turn). Spans hang off it; `trace_id` on assistant messages links back. */
+export const traces = pgTable(
+  "traces",
+  {
+    id: text("id").primaryKey(),
+    conversationId: text("conversation_id").references(() => conversations.id, { onDelete: "set null" }),
+    userId: text("user_id"),
+    name: text("name").notNull(),
+    status: text("status").notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+    durationMs: integer("duration_ms").notNull(),
+    attributes: jsonb("attributes").$type<Record<string, unknown>>().notNull().default({}),
+  },
+  (t) => [index("traces_conversation_idx").on(t.conversationId), index("traces_started_idx").on(t.startedAt)],
+);
+
+/** A timed step inside a trace: guard, route, retrieve, rerank, a model call or a tool call. */
+export const spans = pgTable(
+  "spans",
+  {
+    id: text("id").primaryKey(),
+    traceId: text("trace_id")
+      .notNull()
+      .references(() => traces.id, { onDelete: "cascade" }),
+    parentId: text("parent_id"),
+    name: text("name").notNull(),
+    /** span (plain step), generation (model call) or tool. */
+    kind: text("kind").notNull(),
+    status: text("status").notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+    durationMs: integer("duration_ms").notNull(),
+    attributes: jsonb("attributes").$type<Record<string, unknown>>().notNull().default({}),
+  },
+  (t) => [index("spans_trace_idx").on(t.traceId)],
+);

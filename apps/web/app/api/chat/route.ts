@@ -4,6 +4,8 @@ import {
   checkInput,
   consume,
   createCallCollector,
+  createTracer,
+  exportToLangfuse,
   encodeSse,
   ensureConversation,
   loadConversationHistory,
@@ -14,6 +16,7 @@ import {
   runAgent,
   saveAssistantMessage,
   saveLlmCalls,
+  saveTrace,
   saveUserMessage,
 } from "@app/core";
 import { z } from "zod";
@@ -37,7 +40,7 @@ export async function POST(request: Request) {
   const session = await auth();
   if (!session?.user) return Response.json({ error: "Not signed in" }, { status: 401 });
   const { userId } = session.user;
-  const { db, embedder, llm, reranker, modelRouting } = getServices();
+  const { db, embedder, llm, reranker, modelRouting, langfuse } = getServices();
 
   const [byUser, byIp] = await Promise.all([
     consume(db, `chat:user:${userId}`, CHAT_LIMITS.user),
@@ -73,17 +76,33 @@ export async function POST(request: Request) {
     async start(controller) {
       const send = (event: ChatEvent) => controller.enqueue(encoder.encode(encodeSse(event)));
       // One MCP client per request, bound to the verified session's identity.
-      const calls = createCallCollector();
+      const tracer = createTracer({ name: "chat", conversationId, userId: String(userId) });
+      const calls = createCallCollector((call, timing) =>
+        tracer.add({
+          name: `llm:${call.purpose}`,
+          kind: "generation",
+          parentId: timing.parentId,
+          startedAt: timing.startedAt,
+          endedAt: timing.endedAt,
+          attributes: {
+            model: call.model,
+            tier: call.tier,
+            inputTokens: call.inputTokens,
+            outputTokens: call.outputTokens,
+            projectedCostUsd: call.projectedCostUsd,
+          },
+        }),
+      );
+      const toolStarts = new Map<string, number>();
+      let traceStatus: "ok" | "error" = "ok";
       const mcp = await createInProcessClient({ db, identity: session.user, conversationId });
       try {
         send({ type: "meta", conversationId });
-        const history = await loadConversationHistory(
-          { db, llm: calls.meter(llm, "summary") },
-          conversationId,
-          {
+        const history = await tracer.span("history", (spanId) =>
+          loadConversationHistory({ db, llm: calls.meter(llm, "summary", spanId) }, conversationId, {
             beforeId: userMessageId,
             signal: request.signal,
-          },
+          }),
         );
         const context = history.recent
           .slice(-2)
@@ -94,21 +113,51 @@ export async function POST(request: Request) {
         let route: RouteDecision | undefined;
         const events = runAgent(
           {
-            llm: calls.meter(llm, "agent"),
+            llm: calls.meter(llm, "agent", tracer.rootId),
             mcp: mcp.client,
-            search: (query) => retrieve(db, embedder, query, { k: 5, candidates: 20, reranker }),
+            search: (query) =>
+              tracer.span(
+                "retrieve",
+                (spanId) =>
+                  retrieve(db, embedder, query, {
+                    k: 5,
+                    candidates: 20,
+                    reranker: {
+                      model: reranker.model,
+                      score: (q, documents) =>
+                        tracer.span("rerank", () => reranker.score(q, documents), {
+                          parentId: spanId,
+                          attributes: { model: reranker.model, documents: documents.length },
+                        }),
+                    },
+                  }),
+                { attributes: { query } },
+              ),
             inputGuard: (question) =>
-              checkInput(calls.meter(llm, "guard"), question, { context, signal: request.signal }),
-            route: async (question) => {
-              route =
-                requestedTier === "auto"
-                  ? await routeQuestion(calls.meter(llm, "route"), question, {
-                      hasHistory: history.messages.length > 0,
-                      signal: request.signal,
-                    })
-                  : { tier: requestedTier, source: "forced", reason: "tier set by the request" };
-              return route.tier;
-            },
+              tracer.span("guard", async (spanId) => {
+                const verdict = await checkInput(calls.meter(llm, "guard", spanId), question, {
+                  context,
+                  signal: request.signal,
+                });
+                tracer.setAttributes({ guardAllowed: verdict.allowed });
+                return verdict;
+              }),
+            route: (question) =>
+              tracer.span(
+                "route",
+                async (spanId) => {
+                  route =
+                    requestedTier === "auto"
+                      ? await routeQuestion(calls.meter(llm, "route", spanId), question, {
+                          hasHistory: history.messages.length > 0,
+                          signal: request.signal,
+                        })
+                      : { tier: requestedTier, source: "forced", reason: "tier set by the request" };
+                  tracer.setAttributes({ tier: route.tier, routeSource: route.source });
+                  return route.tier;
+                },
+                {},
+              ),
           },
           message,
           { history: history.messages, signal: request.signal },
@@ -116,9 +165,17 @@ export async function POST(request: Request) {
         for await (const event of events) {
           switch (event.type) {
             case "tool_call":
+              toolStarts.set(event.id, Date.now());
               send({ type: "tool", id: event.id, name: event.name, label: event.label, status: "running" });
               break;
             case "tool_result":
+              tracer.add({
+                name: `tool:${event.name}`,
+                kind: "tool",
+                startedAt: toolStarts.get(event.id) ?? Date.now(),
+                endedAt: Date.now(),
+                status: event.ok ? "ok" : "error",
+              });
               send({
                 type: "tool",
                 id: event.id,
@@ -138,6 +195,7 @@ export async function POST(request: Request) {
               await saveAssistantMessage(db, conversationId, answer, {
                 route: route ?? null,
                 projectedCostUsd: calls.totals().projectedCostUsd,
+                traceId: tracer.traceId,
               });
               send({ type: "citations", citations: answer.citations, answer: answer.answer });
               send({
@@ -157,12 +215,18 @@ export async function POST(request: Request) {
           }
         }
       } catch (error) {
+        traceStatus = "error";
         console.error("chat failed", error);
         send({ type: "error", message: "Something went wrong. Please try again." });
       } finally {
         await saveLlmCalls(db, conversationId, calls.calls).catch((error) =>
           console.error("failed to save llm calls", error),
         );
+        const { inputTokens, outputTokens, projectedCostUsd } = calls.totals();
+        tracer.setAttributes({ inputTokens, outputTokens, projectedCostUsd });
+        const trace = tracer.finish(traceStatus);
+        await saveTrace(db, trace).catch((error) => console.error("failed to save trace", error));
+        if (langfuse) void exportToLangfuse(langfuse, trace);
         await mcp.close();
         controller.close();
       }

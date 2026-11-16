@@ -13,6 +13,14 @@ function create() {
     reranker: createLocalReranker(),
     llm: createLlm(config),
     modelRouting: config.MODEL_ROUTING,
+    langfuse:
+      config.LANGFUSE_PUBLIC_KEY && config.LANGFUSE_SECRET_KEY
+        ? {
+            publicKey: config.LANGFUSE_PUBLIC_KEY,
+            secretKey: config.LANGFUSE_SECRET_KEY,
+            baseUrl: config.LANGFUSE_BASE_URL,
+          }
+        : undefined,
   };
 }
 

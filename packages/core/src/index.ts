@@ -16,6 +16,7 @@ export {
   saveLlmCalls,
   type CallCollector,
   type CallPurpose,
+  type CallTiming,
   type LlmCallRecord,
 } from "./telemetry/usage";
 export { SUPPORT_SYSTEM_PROMPT } from "./prompts/system";
@@ -138,3 +139,14 @@ export {
 export { checkOutput, type OutputCheck, type OutputViolation } from "./guard/output";
 export { redactPii, type PiiKind, type Redaction } from "./guard/pii";
 export { wrapUntrusted } from "./guard/untrusted";
+export {
+  createTracer,
+  saveTrace,
+  type AddSpan,
+  type SpanKind,
+  type SpanRecord,
+  type SpanStatus,
+  type TraceRecord,
+  type Tracer,
+} from "./telemetry/trace";
+export { exportToLangfuse, toLangfuseEvents, type LangfuseConfig } from "./telemetry/langfuse";

@@ -20,6 +20,10 @@ const envSchema = z.object({
   MODEL_LARGE: z.string().min(1).optional(),
   GOOGLE_GENERATIVE_AI_API_KEY: z.string().min(1).optional(),
   ANTHROPIC_API_KEY: z.string().min(1).optional(),
+  /** Optional Langfuse export; traces are always stored locally. */
+  LANGFUSE_PUBLIC_KEY: z.string().min(1).optional(),
+  LANGFUSE_SECRET_KEY: z.string().min(1).optional(),
+  LANGFUSE_BASE_URL: z.string().url().default("https://cloud.langfuse.com"),
 });
 
 export type AppConfig = Omit<z.infer<typeof envSchema>, "MODEL_SMALL" | "MODEL_LARGE"> & {

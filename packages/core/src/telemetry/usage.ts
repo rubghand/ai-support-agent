@@ -27,9 +27,16 @@ export interface LlmCallRecord {
   priceModel: string;
 }
 
+export interface CallTiming {
+  startedAt: number;
+  endedAt: number;
+  /** Span the call belongs under, when the caller passed one to `meter`. */
+  parentId?: string;
+}
+
 export interface CallCollector {
-  /** Returns a view of `llm` whose every model call is recorded under `purpose`. */
-  meter(llm: Llm, purpose: CallPurpose): Llm;
+  /** Returns a view of `llm` whose every model call is recorded under `purpose` (and traced under `parentId`). */
+  meter(llm: Llm, purpose: CallPurpose, parentId?: string): Llm;
   calls: LlmCallRecord[];
   totals(): { inputTokens: number; outputTokens: number; projectedCostUsd: number; calls: number };
 }
@@ -38,17 +45,20 @@ export interface CallCollector {
  * Collects one record per model call. Metering sits in a model middleware, so it sees every call
  * (including retries and streamed ones) without each call site having to report its own usage.
  */
-export function createCallCollector(): CallCollector {
+export function createCallCollector(
+  onCall?: (call: LlmCallRecord, timing: CallTiming) => void,
+): CallCollector {
   const calls: LlmCallRecord[] = [];
   const record = (
+    parentId: string | undefined,
     purpose: CallPurpose,
     tier: ModelTier,
     model: string,
     inputTokens: number,
     outputTokens: number,
     latencyMs: number,
-  ) =>
-    calls.push({
+  ) => {
+    const call: LlmCallRecord = {
       purpose,
       tier,
       model,
@@ -57,11 +67,15 @@ export function createCallCollector(): CallCollector {
       latencyMs: Math.round(latencyMs),
       projectedCostUsd: projectCostUsd(tier, inputTokens, outputTokens),
       priceModel: PRICE_TABLE[tier].model,
-    });
+    };
+    calls.push(call);
+    const endedAt = Date.now();
+    onCall?.(call, { startedAt: endedAt - latencyMs, endedAt, parentId });
+  };
 
   return {
     calls,
-    meter(llm, purpose) {
+    meter(llm, purpose, parentId) {
       const metered = (tier: ModelTier) =>
         wrapLanguageModel({
           model: llm.model(tier) as Parameters<typeof wrapLanguageModel>[0]["model"],
@@ -71,6 +85,7 @@ export function createCallCollector(): CallCollector {
               const started = performance.now();
               const result = await doGenerate();
               record(
+                parentId,
                 purpose,
                 tier,
                 llm.modelId(tier),
@@ -90,6 +105,7 @@ export function createCallCollector(): CallCollector {
                     transform(chunk, controller) {
                       if (chunk.type === "finish") {
                         record(
+                          parentId,
                           purpose,
                           tier,
                           llm.modelId(tier),
