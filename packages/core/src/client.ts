@@ -8,3 +8,4 @@ export {
   type ChatTier,
 } from "./chat/events";
 export type { Citation } from "./rag/answer";
+export type { Rating } from "./chat/feedback";

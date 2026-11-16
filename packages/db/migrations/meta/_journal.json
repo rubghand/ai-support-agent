@@ -64,6 +64,13 @@
       "when": 1794815814091,
       "tag": "0008_familiar_leopardon",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794816134235,
+      "tag": "0009_wakeful_shriek",
+      "breakpoints": true
     }
   ]
 }

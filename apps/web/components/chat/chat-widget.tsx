@@ -5,6 +5,7 @@ import {
   type ActionUpdate,
   type ChatEvent,
   type Citation,
+  type Rating,
   parseSse,
 } from "@app/core/client";
 import { useRouter } from "next/navigation";
@@ -39,6 +40,9 @@ interface UiMessage {
   grounded?: boolean;
   streaming?: boolean;
   error?: boolean;
+  /** Saved assistant message id; feedback can only be given once it exists. */
+  serverId?: number;
+  rating?: Rating;
 }
 
 export function ChatWidget() {
@@ -115,6 +119,7 @@ export function ChatWidget() {
           streaming: false,
           needsHuman: event.needsHuman,
           grounded: event.grounded,
+          serverId: event.messageId,
         }));
         break;
       case "error":
@@ -126,6 +131,19 @@ export function ChatWidget() {
       }
     }
   };
+
+  async function rate(localId: number, serverId: number, rating: Rating) {
+    const previous = messages.find((m) => m.id === localId)?.rating;
+    const set = (value: Rating | undefined) =>
+      setMessages((all) => all.map((m) => (m.id === localId ? { ...m, rating: value } : m)));
+    set(rating);
+    const res = await fetch("/api/feedback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messageId: serverId, rating }),
+    }).catch(() => null);
+    if (!res?.ok) set(previous);
+  }
 
   async function send(e: FormEvent) {
     e.preventDefault();
@@ -223,6 +241,26 @@ export function ChatWidget() {
               >
                 <p className="font-medium">{APPROVAL_LABEL[m.approval.status]}</p>
                 <p>{m.approval.summary}</p>
+              </div>
+            )}
+            {m.serverId !== undefined && !m.streaming && !m.error && (
+              <div className="mt-1 flex gap-1 text-xs" role="group" aria-label="Rate this answer">
+                {(["up", "down"] as const).map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    aria-pressed={m.rating === value}
+                    aria-label={value === "up" ? "Helpful" : "Not helpful"}
+                    onClick={() => void rate(m.id, m.serverId!, value)}
+                    className={`rounded border px-1.5 py-0.5 ${
+                      m.rating === value
+                        ? "border-zinc-900 bg-zinc-900 text-white"
+                        : "border-zinc-300 text-zinc-600 hover:bg-zinc-100"
+                    }`}
+                  >
+                    {value === "up" ? "👍" : "👎"}
+                  </button>
+                ))}
               </div>
             )}
             {m.needsHuman && (

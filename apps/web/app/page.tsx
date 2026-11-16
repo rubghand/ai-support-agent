@@ -21,8 +21,8 @@ async function SessionBar() {
         {session.user.email} ({session.user.role})
       </span>
       {session.user.role === "admin" && (
-        <Link href="/admin/approvals" className="underline">
-          Approvals
+        <Link href="/admin" className="underline">
+          Admin
         </Link>
       )}
       <button type="submit" className="underline">

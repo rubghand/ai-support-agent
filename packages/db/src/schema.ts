@@ -325,3 +325,23 @@ export const spans = pgTable(
   },
   (t) => [index("spans_trace_idx").on(t.traceId)],
 );
+
+// ---------- Feedback ----------
+
+/** A customer's thumbs up/down on one assistant message; one rating per user and message (re-rating replaces it). */
+export const messageFeedback = pgTable(
+  "message_feedback",
+  {
+    id: serial("id").primaryKey(),
+    messageId: integer("message_id")
+      .notNull()
+      .references(() => messages.id, { onDelete: "cascade" }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    rating: text("rating").$type<"up" | "down">().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("message_feedback_user_message_idx").on(t.messageId, t.userId)],
+);

@@ -41,6 +41,7 @@ export {
   type ChatEvent,
   type ChatTier,
 } from "./chat/events";
+export { submitFeedback, type Rating } from "./chat/feedback";
 export { ensureConversation, listMessages, saveAssistantMessage, saveUserMessage } from "./chat/store";
 export {
   frontmatterSchema,
@@ -150,3 +151,16 @@ export {
   type Tracer,
 } from "./telemetry/trace";
 export { exportToLangfuse, toLangfuseEvents, type LangfuseConfig } from "./telemetry/langfuse";
+export {
+  getConversationDetail,
+  getDashboardStats,
+  getTraceDetail,
+  listConversations,
+  listRecentTraces,
+  type ConversationDetail,
+  type ConversationMessage,
+  type ConversationSummary,
+  type DailyStat,
+  type DashboardStats,
+} from "./admin/queries";
+export { summarizeEvalRun, type EvalCategorySummary, type EvalSummary } from "./admin/eval-summary";

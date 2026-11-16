@@ -21,7 +21,15 @@ describe("SSE encode/parse", () => {
   const events: ChatEvent[] = [
     { type: "meta", conversationId: "c1" },
     { type: "token", text: "Héllo\nworld 👋" },
-    { type: "done", confidence: "high", needsHuman: false, grounded: true, model: "m", latencyMs: 5 },
+    {
+      type: "done",
+      confidence: "high",
+      needsHuman: false,
+      grounded: true,
+      model: "m",
+      latencyMs: 5,
+      messageId: 9,
+    },
   ];
   const wire = events.map(encodeSse).join("");
 

@@ -36,7 +36,7 @@ export async function saveAssistantMessage(
   answer: CitedAnswer & { toolCalls?: unknown[]; steps?: number },
   /** Extra fields stored with the message, e.g. the routing decision and projected cost. */
   extra: Record<string, unknown> = {},
-) {
+): Promise<number> {
   // Retrieved chunk text is large and already in the knowledge base; keep citations and the tool trail.
   const metadata = {
     kind: answer.kind,
@@ -54,7 +54,11 @@ export async function saveAssistantMessage(
     steps: answer.steps ?? 0,
     ...extra,
   };
-  await db.insert(messages).values({ conversationId, role: "assistant", content: answer.answer, metadata });
+  const [row] = await db
+    .insert(messages)
+    .values({ conversationId, role: "assistant", content: answer.answer, metadata })
+    .returning({ id: messages.id });
+  return row!.id;
 }
 
 export async function listMessages(db: Db, conversationId: string) {

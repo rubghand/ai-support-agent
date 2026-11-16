@@ -192,7 +192,7 @@ export async function POST(request: Request) {
               break;
             case "final": {
               const { answer } = event;
-              await saveAssistantMessage(db, conversationId, answer, {
+              const messageId = await saveAssistantMessage(db, conversationId, answer, {
                 route: route ?? null,
                 projectedCostUsd: calls.totals().projectedCostUsd,
                 traceId: tracer.traceId,
@@ -205,6 +205,7 @@ export async function POST(request: Request) {
                 grounded: answer.grounded,
                 model: answer.model,
                 latencyMs: answer.latencyMs,
+                messageId,
               });
               break;
             }

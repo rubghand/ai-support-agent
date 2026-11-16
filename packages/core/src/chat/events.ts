@@ -34,6 +34,8 @@ export type ChatEvent =
       grounded: boolean;
       model: string;
       latencyMs: number;
+      /** Id of the saved assistant message; the target of thumbs up/down feedback. */
+      messageId: number;
     }
   | { type: "error"; message: string };
 
