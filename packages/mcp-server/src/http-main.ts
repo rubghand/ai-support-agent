@@ -8,8 +8,10 @@ if (!secret || secret.length < 16) {
   process.exit(1);
 }
 const port = Number(process.env.MCP_PORT ?? 3333);
+// Loopback by default. Containers set MCP_HOST=0.0.0.0 and publish the port on the host's loopback only;
+// expose it beyond that deliberately, behind TLS.
+const host = process.env.MCP_HOST ?? "127.0.0.1";
 const { db } = createDb(loadConfig().DATABASE_URL);
-// Loopback only: the app talks to it locally; expose it deliberately, behind TLS, if ever needed.
-createHttpServer({ db, tokenSecret: secret }).listen(port, "127.0.0.1", () => {
-  console.log(`MCP server listening on http://127.0.0.1:${port}/mcp`);
+createHttpServer({ db, tokenSecret: secret }).listen(port, host, () => {
+  console.log(`MCP server listening on http://${host}:${port}/mcp`);
 });

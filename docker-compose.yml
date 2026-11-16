@@ -1,3 +1,13 @@
+# `docker compose up` runs the whole stack: db -> setup (migrate, seed once, ingest) -> web + mcp.
+# Ollama runs on the host. Secrets (AUTH_SECRET, MCP_TOKEN_SECRET, API keys) come from .env; the
+# `environment` entries below override the host-only values in it (localhost URLs).
+# `npm run db:up` still starts only the database for local development.
+
+x-app-env: &app-env
+  DATABASE_URL: postgres://agent:agent@db:5432/agent
+  OLLAMA_BASE_URL: ${DOCKER_OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+  MODEL_CACHE_DIR: /models
+
 services:
   db:
     image: pgvector/pgvector:pg17
@@ -16,5 +26,76 @@ services:
       timeout: 3s
       retries: 10
 
+  setup:
+    build:
+      context: .
+      dockerfile: packages/mcp-server/Dockerfile
+      target: workspace
+    image: ai-support-agent-workspace
+    command: ["sh", "-c", "npm run db:migrate && npm run db:seed -- --if-empty && npm run ingest"]
+    env_file:
+      - path: .env
+        required: false
+    environment: *app-env
+    volumes:
+      - models:/models
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    image: ai-support-agent-web
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      <<: *app-env
+      # Auth.js only trusts the Host header behind a known platform unless told to.
+      AUTH_TRUST_HOST: "true"
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    volumes:
+      - models:/models
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+
+  mcp:
+    build:
+      context: .
+      dockerfile: packages/mcp-server/Dockerfile
+      target: mcp
+    image: ai-support-agent-mcp
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      <<: *app-env
+      MCP_HOST: 0.0.0.0
+      MCP_PORT: "3333"
+    # Host loopback only: the endpoint is for local MCP clients.
+    ports:
+      - "127.0.0.1:${MCP_PORT:-3333}:3333"
+    healthcheck:
+      # An unauthenticated request must get 401: proves the server is up and enforcing tokens.
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3333/mcp', { method: 'POST' }).then((r) => process.exit(r.status === 401 ? 0 : 1), () => process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      start_period: 15s
+      retries: 5
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+
 volumes:
   pgdata:
+  models:

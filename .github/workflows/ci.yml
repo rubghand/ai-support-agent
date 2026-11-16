@@ -52,3 +52,29 @@ jobs:
       - run: npm run test:integration
       - run: npm run ingest
       - run: npm run eval:retrieval -- --min-hit3 0.9
+
+  # Builds the images and boots the whole stack (no LLM: the checks below never reach a model).
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Write throwaway secrets
+        run: |
+          echo "AUTH_SECRET=$(openssl rand -base64 32)" >> .env
+          echo "MCP_TOKEN_SECRET=$(openssl rand -base64 32)" >> .env
+      - run: docker compose build
+      - run: docker compose up -d --wait --wait-timeout 300
+      - name: Smoke test
+        run: |
+          set -eux
+          test "$(curl -s -o /dev/null -w '%{http_code}' localhost:3000/login)" = 200
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST localhost:3000/api/chat -d '{}')" = 401
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST localhost:3333/mcp)" = 401
+          token=$(docker compose exec -T mcp node --import tsx packages/mcp-server/src/mint-token.ts maya@brightpixelstudio.example | tail -1)
+          curl -sf localhost:3333/mcp -H "Authorization: Bearer $token" \
+            -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+            -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"lookup_order","arguments":{"orderId":"ORD-1042"}}}' \
+            | grep -q 'Priority support'
+      - name: Logs on failure
+        if: failure()
+        run: docker compose logs

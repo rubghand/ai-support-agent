@@ -1,4 +1,5 @@
 import { type FeatureExtractionPipeline, pipeline } from "@huggingface/transformers";
+import { applyModelCacheDir } from "./model-cache";
 
 export const EMBEDDING_MODEL = "Xenova/bge-small-en-v1.5";
 
@@ -16,6 +17,7 @@ export interface Embedder {
 let extractor: Promise<FeatureExtractionPipeline> | undefined;
 
 function getExtractor(): Promise<FeatureExtractionPipeline> {
+  applyModelCacheDir();
   extractor ??= pipeline("feature-extraction", EMBEDDING_MODEL, { dtype: "fp32" });
   return extractor;
 }

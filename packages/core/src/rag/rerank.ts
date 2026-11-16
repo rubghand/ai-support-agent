@@ -1,4 +1,5 @@
 import { AutoModelForSequenceClassification, AutoTokenizer } from "@huggingface/transformers";
+import { applyModelCacheDir } from "./model-cache";
 import type { RetrievedChunk } from "./search";
 
 export const RERANKER_MODEL = "Xenova/bge-reranker-base";
@@ -50,6 +51,7 @@ let loaded:
   | undefined;
 
 function load() {
+  applyModelCacheDir();
   loaded ??= Promise.all([
     AutoTokenizer.from_pretrained(RERANKER_MODEL),
     AutoModelForSequenceClassification.from_pretrained(RERANKER_MODEL, { dtype: "q8" }),
